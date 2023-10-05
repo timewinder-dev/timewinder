@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 starlark = {git = "https://github.com/facebookexperimental/starlark-rust", branch = "main"}
+starlark_syntax = {path = "../starlark_syntax"}
+anyhow = { workspace = true }

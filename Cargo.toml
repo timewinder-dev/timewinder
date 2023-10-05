@@ -5,3 +5,19 @@ members = ["crates/*", "bin/*"]
 # Disabling debug info speeds up builds a bunch,
 # and we don't rely on it for debugging that much.
 debug = 0
+
+[workspace.dependencies]
+starlark_syntax = { version = "0.9", path = "crates/starlark_syntax" }
+
+anyhow = "1.0.75"
+ctor = "0.1.26"
+derivative = "2.2"
+derive_more = "0.99.3"
+either = "1.8"
+equivalent = "1.0.0"
+indenter = "0.3.3"
+memchr = "2.4.1"
+proc-macro2 = "1.0"
+quote = "1.0.3"
+syn = "2"
+thiserror = "1.0.36"

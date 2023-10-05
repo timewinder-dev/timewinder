@@ -997,7 +997,7 @@ dependencies = [
  "serde_json",
  "starlark_derive",
  "starlark_map",
- "starlark_syntax",
+ "starlark_syntax 0.9.0 (git+https://github.com/facebookexperimental/starlark-rust?branch=main)",
  "static_assertions",
  "strsim",
  "textwrap",
@@ -1008,7 +1008,9 @@ dependencies = [
 name = "starlark_compiler"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "starlark",
+ "starlark_syntax 0.9.0",
 ]
 
 [[package]]
@@ -1033,6 +1035,28 @@ dependencies = [
  "fnv",
  "hashbrown 0.12.3",
  "serde",
+]
+
+[[package]]
+name = "starlark_syntax"
+version = "0.9.0"
+dependencies = [
+ "annotate-snippets",
+ "anyhow",
+ "derivative",
+ "derive_more",
+ "dupe",
+ "lalrpop",
+ "lalrpop-util",
+ "logos",
+ "lsp-types",
+ "memchr",
+ "num-bigint",
+ "num-traits",
+ "once_cell",
+ "serde_json",
+ "starlark_map",
+ "thiserror",
 ]
 
 [[package]]
