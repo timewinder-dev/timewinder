@@ -9,9 +9,11 @@ pub enum Instruction {
     RelJump(usize),  // delta jump
     PreCall(String), // apparent name of function
     Call,
+    Return,
 }
 
 #[derive(Clone)]
 pub enum TempInstruction {
+    Continue,
     Break,
 }

@@ -56,6 +56,7 @@ impl Block {
             .enumerate()
             .map(|(i, inst)| match inst {
                 bytecode::Instruction::TempInst(t) => match t {
+                    bytecode::TempInstruction::Continue => todo!(),
                     bytecode::TempInstruction::Break => self
                         .instructions
                         .push(bytecode::Instruction::RelJump(total_length - i)),
