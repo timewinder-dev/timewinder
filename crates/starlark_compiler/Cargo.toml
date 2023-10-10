@@ -10,3 +10,6 @@ starlark = {git = "https://github.com/facebookexperimental/starlark-rust", branc
 starlark_syntax = {path = "../starlark_syntax"}
 anyhow = { workspace = true }
 vm = {path = "../vm"}
+
+[dev-dependencies]
+indoc = "2"

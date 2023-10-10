@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
-use starlark_syntax::syntax::ast::{AstExprP, AstPayload};
+use starlark_syntax::syntax::ast::{AssignP, AssignTargetP, AstExprP, AstPayload};
 use starlark_syntax::syntax::ast::{AstStmt, ExprP, StmtP};
 use vm::bytecode::Instruction;
 use vm::bytecode::TempInstruction;
@@ -32,9 +34,13 @@ pub fn compile_stmt(
             into_block.add_instruction(Instruction::Return, cur_span);
         }
         StmtP::Expression(expr) => compile_expr(expr, into_block, file)?,
-        StmtP::Assign(_) => todo!(),
+        StmtP::Assign(assign) => compile_assign(assign, into_block, file)?,
         StmtP::AssignModify(_, _, _) => todo!(),
-        StmtP::Statements(_) => todo!(),
+        StmtP::Statements(stmts) => {
+            for s in stmts {
+                compile_stmt(s, into_block, file)?
+            }
+        }
         StmtP::If(_, _) => todo!(),
         StmtP::IfElse(_, _) => todo!(),
         StmtP::For(_) => todo!(),
@@ -54,10 +60,16 @@ pub fn compile_expr<P: AstPayload>(
         ExprP::Tuple(_) => todo!(),
         ExprP::Dot(_, _) => todo!(),
         ExprP::Call(_, _) => todo!(),
-        ExprP::Index(_) => todo!(),
+        ExprP::Index(idx) => {
+            compile_expr(&idx.0, into_block, file)?;
+            compile_expr(&idx.1, into_block, file)?;
+            into_block.add_instruction(Instruction::LoadSubscr, cur_span);
+        }
         ExprP::Index2(_) => todo!(),
         ExprP::Slice(_, _, _, _) => todo!(),
-        ExprP::Identifier(_) => todo!(),
+        ExprP::Identifier(id) => {
+            into_block.add_instruction(Instruction::LoadVar(id.ident.clone()), cur_span)
+        }
         ExprP::Lambda(_) => todo!(),
         ExprP::Literal(lit) => {
             into_block.add_instruction(Instruction::PushLiteral(lit.into()), cur_span)
@@ -73,10 +85,49 @@ pub fn compile_expr<P: AstPayload>(
         }
         ExprP::If(_) => todo!(),
         ExprP::List(_) => todo!(),
-        ExprP::Dict(_) => todo!(),
+        ExprP::Dict(d) => {
+            into_block.add_instruction(
+                Instruction::PushLiteral(vm::value::Val::Dict(HashMap::default())),
+                cur_span.clone(),
+            );
+            for v in d {
+                let key = &v.0;
+                let val = &v.1;
+                compile_expr(val, into_block, file)?;
+                into_block.add_instruction(Instruction::RotTwo, cur_span.clone());
+                compile_expr(key, into_block, file)?;
+                into_block.add_instruction(Instruction::StoreSubscr, cur_span.clone())
+            }
+        }
         ExprP::ListComprehension(_, _, _) => todo!(),
         ExprP::DictComprehension(_, _, _) => todo!(),
         ExprP::FString(_) => todo!(),
+    };
+    Ok(())
+}
+
+pub fn compile_assign<P: AstPayload>(
+    expr: &AssignP<P>,
+    into_block: &mut Block,
+    file: &mut vm::BytecodeFile,
+) -> Result<()> {
+    // First, put the RHS on the stack
+    compile_expr(&expr.rhs, into_block, file)?;
+    // Ignore expr.ty
+    // Then, assign the value
+    let cur_span: vm::Span = (&expr.lhs.span).into();
+    match &expr.lhs.node {
+        AssignTargetP::Tuple(_) => todo!("Destructing assign not yet implemented"),
+        AssignTargetP::Index(idx) => {
+            compile_expr(&idx.0, into_block, file)?;
+            compile_expr(&idx.1, into_block, file)?;
+            into_block.add_instruction(Instruction::StoreSubscr, cur_span.clone());
+            into_block.add_instruction(Instruction::Pop, cur_span);
+        }
+        AssignTargetP::Dot(_, _) => todo!(),
+        AssignTargetP::Identifier(id) => {
+            into_block.add_instruction(Instruction::StoreVar(id.node.ident.clone()), cur_span);
+        }
     };
     Ok(())
 }

@@ -433,6 +433,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indoc"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e186cfbae8084e513daff4240b4797e342f988cecda4fb6c939150f96315fd8"
+
+[[package]]
 name = "inventory"
 version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1009,6 +1015,7 @@ name = "starlark_compiler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "indoc",
  "starlark",
  "starlark_syntax 0.9.0",
  "vm",
