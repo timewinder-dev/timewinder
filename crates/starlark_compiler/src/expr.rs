@@ -24,12 +24,14 @@ pub fn compile_stmt(
                 Some(ref e) => {
                     compile_expr(e, into_block, file)?;
                 }
-                None => into_block
-                    .add_instruction(Instruction::PushLiteral(vm::value::Val::Null), cur_span),
+                None => into_block.add_instruction(
+                    Instruction::PushLiteral(vm::value::Val::Null),
+                    cur_span.clone(),
+                ),
             };
             into_block.add_instruction(Instruction::Return, cur_span);
         }
-        StmtP::Expression(_) => todo!(),
+        StmtP::Expression(expr) => compile_expr(expr, into_block, file)?,
         StmtP::Assign(_) => todo!(),
         StmtP::AssignModify(_, _, _) => todo!(),
         StmtP::Statements(_) => todo!(),
@@ -64,7 +66,11 @@ pub fn compile_expr<P: AstPayload>(
         ExprP::Minus(_) => todo!(),
         ExprP::Plus(_) => todo!(),
         ExprP::BitNot(_) => todo!(),
-        ExprP::Op(_, _, _) => todo!(),
+        ExprP::Op(ex1, op, ex2) => {
+            compile_expr(ex1, into_block, file)?;
+            compile_expr(ex2, into_block, file)?;
+            into_block.add_instruction(Instruction::BinOp(op.into()), cur_span);
+        }
         ExprP::If(_) => todo!(),
         ExprP::List(_) => todo!(),
         ExprP::Dict(_) => todo!(),

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use starlark_syntax::syntax::ast::AstLiteral;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Val {
     Integer(i64),
     Float(f64),

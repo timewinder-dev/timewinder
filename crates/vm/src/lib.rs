@@ -5,6 +5,7 @@ pub mod value;
 
 // A direct import of the Span type from Starlark, but copied here to generalize if ever starlark
 // is to be removed.
+#[derive(Clone, Debug)]
 pub struct Span {
     /// The position in the codemap representing the first byte of the span.
     pub begin: u32,
@@ -28,7 +29,7 @@ impl From<&starlark_syntax::codemap::Span> for Span {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Block {
     instructions: Vec<bytecode::Instruction>,
     debug_locations: Vec<Option<Span>>,
@@ -71,6 +72,7 @@ impl Block {
     }
 }
 
+#[derive(Debug)]
 pub struct BytecodeFile {
     main: Option<usize>,
     filename: String,
