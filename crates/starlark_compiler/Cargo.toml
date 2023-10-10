@@ -9,3 +9,4 @@ edition = "2021"
 starlark = {git = "https://github.com/facebookexperimental/starlark-rust", branch = "main"}
 starlark_syntax = {path = "../starlark_syntax"}
 anyhow = { workspace = true }
+vm = {path = "../vm"}

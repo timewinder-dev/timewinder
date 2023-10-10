@@ -20,4 +20,16 @@ mod tests {
         dbg!(stmt);
         Ok(())
     }
+    #[test]
+    fn parse_def() -> Result<()> {
+        let module = AstModule::parse(
+            "foo.starlark",
+            "def foo(y):\n  x = 3 + y\n  return x\n\ng = foo(6)".to_string(),
+            &Dialect::Standard,
+        )?;
+
+        let stmt = module.statement();
+        dbg!(stmt);
+        Ok(())
+    }
 }
