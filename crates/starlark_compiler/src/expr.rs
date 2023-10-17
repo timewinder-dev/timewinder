@@ -41,11 +41,27 @@ pub fn compile_stmt(
                 compile_stmt(s, into_block, file)?
             }
         }
-        StmtP::If(_, _) => todo!(),
-        StmtP::IfElse(_, _) => todo!(),
+        StmtP::If(if_expr, body_stmt) => {
+            let mut body = Block::default();
+            compile_stmt(body_stmt, &mut body, file)?;
+            compile_expr(if_expr, into_block, file)?;
+            into_block.add_instruction(Instruction::RelJumpIfFalse(body.len()), cur_span);
+            into_block.append_block(body)
+        }
+        StmtP::IfElse(if_expr, body_pair) => {
+            let mut true_body = Block::default();
+            let mut false_body = Block::default();
+            compile_stmt(&body_pair.0, &mut true_body, file)?;
+            compile_stmt(&body_pair.1, &mut false_body, file)?;
+            true_body.add_instruction(Instruction::RelJump(false_body.len()), cur_span.clone());
+            compile_expr(if_expr, into_block, file)?;
+            into_block.add_instruction(Instruction::RelJumpIfFalse(true_body.len()), cur_span);
+            into_block.append_block(true_body);
+            into_block.append_block(false_body);
+        }
         StmtP::For(_) => todo!(),
         StmtP::Def(_) => todo!(),
-        StmtP::Load(_) => todo!(),
+        StmtP::Load(_) => todo!("load() statement unimplemented (for now)"),
     };
     Ok(())
 }
@@ -124,7 +140,15 @@ pub fn compile_assign<P: AstPayload>(
             into_block.add_instruction(Instruction::StoreSubscr, cur_span.clone());
             into_block.add_instruction(Instruction::Pop, cur_span);
         }
-        AssignTargetP::Dot(_, _) => todo!(),
+        AssignTargetP::Dot(var, prop) => {
+            compile_expr(var, into_block, file)?;
+            into_block.add_instruction(
+                Instruction::PushLiteral(vm::value::Val::Str(prop.to_string())),
+                cur_span.clone(),
+            );
+            into_block.add_instruction(Instruction::StoreSubscr, cur_span.clone());
+            into_block.add_instruction(Instruction::Pop, cur_span);
+        }
         AssignTargetP::Identifier(id) => {
             into_block.add_instruction(Instruction::StoreVar(id.node.ident.clone()), cur_span);
         }

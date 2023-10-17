@@ -20,6 +20,7 @@ pub enum Instruction {
     StoreSubscr,       // TOS1[TOS] = TOS2
     LoadSubscr,        // TOS = TOS1[TOS]
     RotTwo,
+    RelJumpIfFalse(usize),
 }
 
 impl std::fmt::Debug for Instruction {
@@ -41,6 +42,9 @@ impl std::fmt::Debug for Instruction {
             Instruction::StoreSubscr => f.write_str("STORE_SUBSCR"),
             Instruction::LoadSubscr => f.write_str("LOAD_SUBSCR"),
             Instruction::RotTwo => f.write_str("ROT_TWO"),
+            Instruction::RelJumpIfFalse(delta) => {
+                f.write_fmt(format_args!("JMP_FALSE {:?}", delta))
+            }
         }
     }
 }
