@@ -45,7 +45,10 @@ pub fn compile_stmt(
             let mut body = Block::default();
             compile_stmt(body_stmt, &mut body, file)?;
             compile_expr(if_expr, into_block, file)?;
-            into_block.add_instruction(Instruction::RelJumpIfFalse(body.len()), cur_span);
+            into_block.add_instruction(
+                Instruction::RelJumpIfFalse(body.len().try_into()?),
+                cur_span,
+            );
             into_block.append_block(body)
         }
         StmtP::IfElse(if_expr, body_pair) => {
@@ -53,9 +56,15 @@ pub fn compile_stmt(
             let mut false_body = Block::default();
             compile_stmt(&body_pair.0, &mut true_body, file)?;
             compile_stmt(&body_pair.1, &mut false_body, file)?;
-            true_body.add_instruction(Instruction::RelJump(false_body.len()), cur_span.clone());
+            true_body.add_instruction(
+                Instruction::RelJump(false_body.len().try_into()?),
+                cur_span.clone(),
+            );
             compile_expr(if_expr, into_block, file)?;
-            into_block.add_instruction(Instruction::RelJumpIfFalse(true_body.len()), cur_span);
+            into_block.add_instruction(
+                Instruction::RelJumpIfFalse(true_body.len().try_into()?),
+                cur_span,
+            );
             into_block.append_block(true_body);
             into_block.append_block(false_body);
         }

@@ -8,7 +8,7 @@ pub enum Instruction {
     Pop,
     PushLiteral(Val),
     TempInst(TempInstruction),
-    RelJump(usize),  // delta jump
+    RelJump(isize),  // delta jump
     PreCall(String), // apparent name of function
     Call,
     Return,
@@ -20,7 +20,7 @@ pub enum Instruction {
     StoreSubscr,       // TOS1[TOS] = TOS2
     LoadSubscr,        // TOS = TOS1[TOS]
     RotTwo,
-    RelJumpIfFalse(usize),
+    RelJumpIfFalse(isize),
 }
 
 impl std::fmt::Debug for Instruction {

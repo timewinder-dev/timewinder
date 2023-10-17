@@ -1,6 +1,5 @@
-use starlark_syntax::slice_vec_ext::SliceExt;
-
 pub mod bytecode;
+pub mod executor;
 pub mod value;
 
 // A direct import of the Span type from Starlark, but copied here to generalize if ever starlark
@@ -58,9 +57,9 @@ impl Block {
             .map(|(i, inst)| match inst {
                 bytecode::Instruction::TempInst(t) => match t {
                     bytecode::TempInstruction::Continue => todo!(),
-                    bytecode::TempInstruction::Break => self
-                        .instructions
-                        .push(bytecode::Instruction::RelJump(total_length - i)),
+                    bytecode::TempInstruction::Break => self.instructions.push(
+                        bytecode::Instruction::RelJump((total_length - i).try_into().unwrap()),
+                    ),
                 },
                 _ => self.instructions.push(inst),
             })
