@@ -37,17 +37,19 @@ pub struct ExecutionState {
 }
 
 impl ExecutionState {
+    pub(crate) fn get_pc(&self) -> Option<(usize, usize)> {
+        self.environments.last().map(|l| (l.block, l.pc))
+    }
+
     fn last_env(&mut self) -> Result<&mut Environment> {
         match self.environments.last_mut() {
             Some(x) => Ok(x),
             None => Err(crate::executor::ExecutionError::EnvNotReady.into()),
         }
     }
-    pub(crate) fn exec_instruction(&mut self, program: &crate::BytecodeFile) -> Result<()> {
+    pub(crate) fn exec_instruction(&mut self, instruction: &Instruction) -> Result<()> {
         let env = self.last_env()?;
-        let block = &program.blocks[env.block];
-        let inst = &block.instructions[env.pc];
-        match inst {
+        match instruction {
             Instruction::NoOp => {}
             Instruction::Pop => {
                 let v = env.stack.pop();

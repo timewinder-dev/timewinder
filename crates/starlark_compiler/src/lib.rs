@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod explore_test;
+#[cfg(test)]
+mod integration_test;
 
 mod expr;
 
@@ -17,6 +19,7 @@ pub fn parse_string_to_bytecode(filename: &str, source: String) -> Result<vm::By
     let ast = string_to_astmod(filename, source)?;
     let mut main = vm::Block::default();
     expr::compile_stmt(ast.statement(), &mut main, &mut program)?;
-    program.add_block(main);
+    let main_block_id = program.add_block(main);
+    program.set_main(Some(main_block_id));
     Ok(program)
 }
