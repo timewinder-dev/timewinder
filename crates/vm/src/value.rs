@@ -12,7 +12,7 @@ pub enum Val {
     Float(f64),
     Str(String),
     Bool(bool),
-    Dict(HashMap<Val, Val>),
+    Dict(HashMap<String, Val>),
     List(Vec<Val>),
     Null,
 }
@@ -20,8 +20,8 @@ pub enum Val {
 impl Val {
     pub fn is_truthy(&self) -> bool {
         match self {
-            Val::Integer(v) => v.eq(&(0 as i64)),
-            Val::Float(f) => f.eq(&(0.0 as f64)),
+            Val::Integer(v) => v.eq(&(0)),
+            Val::Float(f) => f.eq(&(0.0)),
             Val::Str(s) => s.is_empty(),
             Val::Bool(b) => *b,
             Val::Dict(d) => d.is_empty(),
@@ -146,7 +146,7 @@ impl Val {
             (Val::Str(_), Val::Str(_)) => todo!(),
             (Val::Bool(_), Val::Bool(_)) => todo!(),
             (Val::Null, Val::Null) => todo!(),
-            _ => return Err(anyhow!("Uncomparable types {:?} and {:?}", self, other)),
+            _ => Err(anyhow!("Uncomparable types {:?} and {:?}", self, other)),
         }
     }
 

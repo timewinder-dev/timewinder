@@ -37,6 +37,16 @@ pub struct ExecutionState {
 }
 
 impl ExecutionState {
+    pub fn lookup_var(&self, name: &String) -> Option<Val> {
+        for i in (0..self.environments.len()).rev() {
+            let res = self.environments[i].vals.get(name);
+            if res.is_some() {
+                return res.cloned();
+            }
+        }
+        None
+    }
+
     pub(crate) fn get_pc(&self) -> Option<(usize, usize)> {
         self.environments.last().map(|l| (l.block, l.pc))
     }
@@ -75,12 +85,67 @@ impl ExecutionState {
             Instruction::Return => todo!(),
             Instruction::BinOp(op) => env.apply_binop(op)?,
             Instruction::LoadAttr(_) => todo!(),
-            Instruction::LoadVar(_) => todo!(),
+            Instruction::LoadVar(varname) => {
+                let val = env
+                    .vals
+                    .get(varname)
+                    .ok_or_else(|| anyhow!("No such variable, {:?}", varname))?;
+                env.stack.push(val.clone())
+            }
             Instruction::StoreAttr(_) => todo!(),
-            Instruction::StoreVar(_) => todo!(),
-            Instruction::StoreSubscr => todo!(),
-            Instruction::LoadSubscr => todo!(),
-            Instruction::RotTwo => todo!(),
+            Instruction::StoreVar(varname) => {
+                let val = env.stack.pop().ok_or_else(|| anyhow!("Empty stack"))?;
+                env.vals.insert(varname.clone(), val);
+            }
+            Instruction::StoreSubscr => {
+                let tos = env.stack.pop().ok_or_else(|| anyhow!("Empty stack"))?;
+                let mut tos1 = env.stack.pop().ok_or_else(|| anyhow!("Empty stack"))?;
+                let tos2 = env.stack.pop().ok_or_else(|| anyhow!("Empty stack"))?;
+                match tos1 {
+                    Val::List(ref mut l) => {
+                        let off = match tos {
+                            Val::Integer(i) => i,
+                            _ => {
+                                return Err(anyhow!(
+                                    "Subscript is not an integer for this list: {:?}",
+                                    tos
+                                ))
+                            }
+                        };
+                        let idx: usize = off.try_into().unwrap();
+                        if l.len() <= idx {
+                            return Err(anyhow!("Subscript {:?} off edge of list {:?}", off, l));
+                        }
+                        l[idx] = tos2;
+                    }
+                    Val::Dict(ref mut d) => {
+                        let off = match tos {
+                            Val::Str(s) => s.clone(),
+                            _ => {
+                                return Err(anyhow!(
+                                    "Subscript is not a string for this list: {:?}",
+                                    tos
+                                ))
+                            }
+                        };
+                        d.insert(off, tos2);
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "Subscripting item is not a list or dict: {:?}",
+                            tos1
+                        ))
+                    }
+                }
+                env.stack.push(tos1);
+            }
+            Instruction::LoadSubscr => return Err(anyhow!("loadsubscr not implemented")),
+            Instruction::RotTwo => {
+                let tos = env.stack.pop().ok_or_else(|| anyhow!("Empty stack"))?;
+                let tos1 = env.stack.pop().ok_or_else(|| anyhow!("Empty stack"))?;
+                env.stack.push(tos);
+                env.stack.push(tos1);
+            }
             Instruction::RelJumpIfFalse(_) => todo!(),
         };
         env.pc += 1;
