@@ -1,5 +1,4 @@
 use crate::into_vm::IntoVM;
-use std::collections::HashMap;
 
 use anyhow::Result;
 use starlark_syntax::syntax::ast::{AssignP, AssignTargetP, AstExprP, AstPayload};
@@ -115,10 +114,7 @@ pub fn compile_expr<P: AstPayload>(
         ExprP::If(_) => todo!(),
         ExprP::List(_) => todo!(),
         ExprP::Dict(d) => {
-            into_block.add_instruction(
-                Instruction::PushLiteral(vm::value::Val::Dict(HashMap::default())),
-                cur_span.clone(),
-            );
+            into_block.add_instruction(Instruction::AllocDict, cur_span.clone());
             for v in d {
                 let key = &v.0;
                 let val = &v.1;

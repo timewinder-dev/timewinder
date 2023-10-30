@@ -5,6 +5,8 @@ pub enum Instruction {
     NoOp,
     Pop,
     PushLiteral(Val),
+    AllocDict,
+    AllocVec,
     TempInst(TempInstruction),
     RelJump(isize),  // delta jump
     PreCall(String), // apparent name of function
@@ -26,6 +28,8 @@ impl std::fmt::Debug for Instruction {
         match self {
             Instruction::NoOp => f.write_str("NOP"),
             Instruction::Pop => f.write_str("POP"),
+            Instruction::AllocDict => f.write_str("ALLOC_DICT"),
+            Instruction::AllocVec => f.write_str("ALLOC_VEC"),
             Instruction::PushLiteral(lit) => f.write_fmt(format_args!("PUSH_LITERAL {:?}", lit)),
             Instruction::TempInst(t) => f.write_fmt(format_args!("{:?}", t)),
             Instruction::RelJump(diff) => f.write_fmt(format_args!("REL_JUMP {:?}", diff)),

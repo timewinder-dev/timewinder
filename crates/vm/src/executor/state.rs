@@ -68,6 +68,8 @@ impl ExecutionState {
                 }
             }
             Instruction::PushLiteral(lit) => env.stack.push(lit.clone()),
+            Instruction::AllocDict => env.stack.push(Val::Dict(HashMap::new())),
+            Instruction::AllocVec => todo!(),
             Instruction::TempInst(_) => {
                 return Err(anyhow!(
                     "Temporary Instruction encountered during execution"

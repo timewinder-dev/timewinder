@@ -1,5 +1,4 @@
 pub mod state;
-use anyhow::Result;
 
 use crate::bytecode::Instruction;
 
