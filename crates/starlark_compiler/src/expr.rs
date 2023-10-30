@@ -1,3 +1,4 @@
+use crate::into_vm::IntoVM;
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -69,7 +70,10 @@ pub fn compile_stmt(
             into_block.append_block(false_body);
         }
         StmtP::For(_) => todo!(),
-        StmtP::Def(_) => todo!(),
+        StmtP::Def(def) => {
+            into_block
+                .add_instruction(Instruction::StoreVar(def.name.node.ident.clone()), cur_span);
+        }
         StmtP::Load(_) => todo!("load() statement unimplemented (for now)"),
     };
     Ok(())
@@ -106,7 +110,7 @@ pub fn compile_expr<P: AstPayload>(
         ExprP::Op(ex1, op, ex2) => {
             compile_expr(ex1, into_block, file)?;
             compile_expr(ex2, into_block, file)?;
-            into_block.add_instruction(Instruction::BinOp(op.into()), cur_span);
+            into_block.add_instruction(Instruction::BinOp(op.into_vm()), cur_span);
         }
         ExprP::If(_) => todo!(),
         ExprP::List(_) => todo!(),
@@ -140,8 +144,16 @@ pub fn compile_assign<P: AstPayload>(
     compile_expr(&expr.rhs, into_block, file)?;
     // Ignore expr.ty
     // Then, assign the value
-    let cur_span: vm::Span = (&expr.lhs.span).into();
-    match &expr.lhs.node {
+    assign_into(&expr.lhs, into_block, file)
+}
+
+fn assign_into<P: AstPayload>(
+    assign: &starlark_syntax::codemap::Spanned<AssignTargetP<P>>,
+    into_block: &mut Block,
+    file: &mut vm::BytecodeFile,
+) -> std::result::Result<(), anyhow::Error> {
+    let cur_span: vm::Span = (&assign.span).into();
+    match &assign.node {
         AssignTargetP::Tuple(_) => todo!("Destructing assign not yet implemented"),
         AssignTargetP::Index(idx) => {
             compile_expr(&idx.0, into_block, file)?;

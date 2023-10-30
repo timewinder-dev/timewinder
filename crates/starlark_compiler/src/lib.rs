@@ -4,6 +4,7 @@ mod explore_test;
 mod integration_test;
 
 mod expr;
+mod into_vm;
 
 use anyhow::Result;
 
@@ -17,7 +18,8 @@ fn string_to_astmod(filename: &str, source: String) -> Result<AstModule> {
 pub fn parse_string_to_bytecode(filename: &str, source: String) -> Result<vm::BytecodeFile> {
     let mut program = vm::BytecodeFile::new(filename);
     let ast = string_to_astmod(filename, source)?;
-    let mut main = vm::Block::default();
+    let main_args = vm::BlockParameter::default();
+    let mut main = vm::Block::new(main_args);
     expr::compile_stmt(ast.statement(), &mut main, &mut program)?;
     let main_block_id = program.add_block(main);
     program.set_main(Some(main_block_id));

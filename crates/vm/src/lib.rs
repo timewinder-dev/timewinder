@@ -29,12 +29,27 @@ impl From<&starlark_syntax::codemap::Span> for Span {
 }
 
 #[derive(Default, Debug)]
+pub struct BlockParameter {
+    pub arg_list: Vec<String>,
+    pub args_name: Option<String>,
+    pub kwargs_name: Option<String>,
+}
+
+#[derive(Default, Debug)]
 pub struct Block {
-    instructions: Vec<bytecode::Instruction>,
-    debug_locations: Vec<Option<Span>>,
+    pub parameters: BlockParameter,
+    pub instructions: Vec<bytecode::Instruction>,
+    pub debug_locations: Vec<Option<Span>>,
 }
 
 impl Block {
+    pub fn new(parameters: BlockParameter) -> Self {
+        Self {
+            parameters,
+            instructions: Vec::default(),
+            debug_locations: Vec::default(),
+        }
+    }
     pub fn add_instruction(&mut self, inst: bytecode::Instruction, span: Span) {
         self.instructions.push(inst);
         self.debug_locations.push(Some(span));
