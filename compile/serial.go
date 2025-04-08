@@ -1,4 +1,4 @@
-package vm
+package compile
 
 // This file defines functions to read and write a compile.Program to a file.
 //
