@@ -23,12 +23,8 @@ func (cc *compileContext) emitArg(op Opcode, val Value) {
 	cc.ops = append(cc.ops, Op{Code: op, Arg: val})
 }
 
-func (cc *compileContext) genLabel() string {
-
-}
-
 func (cc *compileContext) newLabel(label string) {
-	cc.ops = append(cc.ops)
+	cc.ops = append(cc.ops, Op{Code: NOP, Arg: StrValue(label)})
 }
 
 func newCompileContext() *compileContext {
@@ -37,7 +33,8 @@ func newCompileContext() *compileContext {
 
 func Compile(file *syntax.File) (*Program, error) {
 	p := &Program{
-		Definitions: make(map[string]*Function),
+		Definitions: make(map[string]int),
+		Predicates:  make(map[string]int),
 	}
 	// Top level context
 	env := newCompileContext()
