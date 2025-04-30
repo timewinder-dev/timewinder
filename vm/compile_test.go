@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.starlark.net/syntax"
 )
 
 func TestSmall(t *testing.T) {
@@ -32,7 +33,10 @@ func fileTest(path string) func(t *testing.T) {
 		f, err := os.Open(path)
 		require.NoError(t, err)
 		defer f.Close()
-		p, err := LoadFile(path, f)
+		opts := syntax.FileOptions{}
+		synFile, err := opts.Parse(path, f, 0)
+		require.NoError(t, err)
+		p, err := buildCompileContextTree(synFile)
 		require.NoError(t, err)
 		t.Logf("%#v", p)
 	}
