@@ -52,3 +52,12 @@ func (ArrayValue) isValue() {}
 func (a ArrayValue) AsBool() bool {
 	return len(a) > 0
 }
+
+type NoneValue bool
+
+var None NoneValue = false
+
+func (NoneValue) isValue() {}
+func (NoneValue) AsBool() bool {
+	return false
+}

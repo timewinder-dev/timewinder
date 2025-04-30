@@ -38,6 +38,7 @@ func fileTest(path string) func(t *testing.T) {
 		require.NoError(t, err)
 		p, err := buildCompileContextTree(synFile)
 		require.NoError(t, err)
+		p.DebugPrint()
 		t.Logf("%#v", p)
 	}
 }

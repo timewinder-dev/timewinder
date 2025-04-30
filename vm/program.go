@@ -19,3 +19,10 @@ func (ptr ExecPtr) Offset() int {
 func (ptr ExecPtr) CodeID() int {
 	return int(ptr >> 32)
 }
+
+type FunctionParam struct {
+	Name    string
+	Default Value
+	ArgList bool
+	ArgMap  bool
+}

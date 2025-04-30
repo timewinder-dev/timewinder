@@ -16,6 +16,19 @@ type compileContext struct {
 	ops        []Op
 	topLevel   bool
 	subContext map[string]*compileContext
+	params     []FunctionParam
+}
+
+func (cc *compileContext) DebugPrint() {
+	fmt.Printf("ops: %#v\n", cc.ops)
+	fmt.Printf("params: %#v\n", cc.params)
+	if len(cc.subContext) != 0 {
+		for k, v := range cc.subContext {
+			fmt.Printf("%s:\n", k)
+			fmt.Printf("\tops: %#v\n", v.ops)
+			fmt.Printf("\tparams: %#v\n", v.params)
+		}
+	}
 }
 
 func (cc *compileContext) emit(op Opcode) {
@@ -48,20 +61,44 @@ func Compile(file *syntax.File) (*Program, error) {
 func buildCompileContextTree(file *syntax.File) (*compileContext, error) {
 	cc := newCompileContext()
 	cc.topLevel = true
-	for _, s := range file.Stmts {
-		err := cc.statement(s)
-		if err != nil {
-			return nil, err
-		}
+	err := cc.buildFromStatements(file.Stmts)
+	if err != nil {
+		return nil, err
 	}
 	return cc, nil
 }
 
+func (cc *compileContext) buildFromStatements(stmts []syntax.Stmt) error {
+	for _, s := range stmts {
+		err := cc.statement(s)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (cc *compileContext) statement(s syntax.Stmt) error {
 	switch v := s.(type) {
-	//case *syntax.AssignStmt:
+	case *syntax.AssignStmt:
+		return cc.assign(v.Op, v.LHS, v.RHS)
 	//case *syntax.BranchStmt:
-	//case *syntax.DefStmt:
+	case *syntax.DefStmt:
+		if !cc.topLevel {
+			return errors.New("Nested defs are unsupported")
+		}
+		sub := newCompileContext()
+		name := v.Name.Name
+		var err error
+		sub.params, err = getFunctionParams(v.Params)
+		if err != nil {
+			return err
+		}
+		err = sub.buildFromStatements(v.Body)
+		if err != nil {
+			return err
+		}
+		cc.subContext[name] = sub
 	case *syntax.ExprStmt:
 		if _, ok := v.X.(*syntax.Literal); ok {
 			// Opt: don't compile literals only to pop them.
@@ -77,7 +114,13 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 	//case *syntax.IfStmt:
 	case *syntax.LoadStmt:
 		return errors.New("LoadStmt is unimplemented")
-	//case *syntax.ReturnStmt:
+	case *syntax.ReturnStmt:
+		if v.Result == nil {
+			cc.emitArg(PUSH, None)
+		} else {
+			cc.expr(v.Result)
+		}
+		cc.emit(RETURN)
 	default:
 		return fmt.Errorf("Unhandled statment type %T", s)
 	}
@@ -102,12 +145,19 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 	//case *syntax.DictEntry:
 	//case *syntax.DictExpr:
 	//case *syntax.DotExpr:
-	//case *syntax.Ident:
+	case *syntax.Ident:
+		cc.emitArg(PUSH, StrValue(v.Name))
+		cc.emit(GETVAL)
 	//case *syntax.IndexExpr:
 	case *syntax.LambdaExpr:
 		return errors.New("Lambda expressions are unsupported")
 		//case *syntax.ListExpr:
-		//case *syntax.Literal:
+	case *syntax.Literal:
+		val, err := litToValue(v.Value)
+		if err != nil {
+			return err
+		}
+		cc.emitArg(PUSH, val)
 		//case *syntax.ParenExpr:
 		//case *syntax.SliceExpr:
 		//case *syntax.TupleExpr:
@@ -120,10 +170,14 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 
 func (cc *compileContext) binOp(op syntax.Token) error {
 	switch op {
-	//case syntax.PLUS: // +
-	//case syntax.MINUS: // -
-	//case syntax.STAR: // *
-	//case syntax.SLASH: // /
+	case syntax.PLUS: // +
+		cc.emit(ADD)
+	case syntax.MINUS: // -
+		cc.emit(SUBTRACT)
+	case syntax.STAR: // *
+		cc.emit(MULTIPLY)
+	case syntax.SLASH: // /
+		cc.emit(DIVIDE)
 	//case syntax.SLASHSLASH: // //
 	//case syntax.PERCENT: // %
 	//case syntax.AMP: // &
@@ -184,4 +238,54 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 		return fmt.Errorf("compileContext: Unhandled binary operation %#v", op)
 	}
 	return nil
+}
+
+func (cc *compileContext) assign(op syntax.Token, lhs syntax.Expr, rhs syntax.Expr) error {
+	err := cc.expr(rhs)
+	if err != nil {
+		return err
+	}
+	if op != syntax.EQ {
+		return errors.New("+= and similar assignments unimplemented")
+	}
+	switch v := lhs.(type) {
+	case *syntax.Ident:
+		cc.emitArg(PUSH, StrValue(v.Name))
+		cc.emit(SETVAL)
+	default:
+		return fmt.Errorf("assign: Unhandled LHS expr type %T", lhs)
+	}
+	return nil
+}
+
+func getFunctionParams(e []syntax.Expr) ([]FunctionParam, error) {
+	var out []FunctionParam
+	for _, x := range e {
+		switch v := x.(type) {
+		case *syntax.Ident:
+			out = append(out, FunctionParam{Name: v.Name})
+		default:
+			return nil, fmt.Errorf("Unhandled function param expr type %T", x)
+		}
+	}
+	return out, nil
+}
+
+func unparen(e syntax.Expr) syntax.Expr {
+	if p, ok := e.(*syntax.ParenExpr); ok {
+		return unparen(p.X)
+	}
+	return e
+}
+
+func litToValue(l any) (Value, error) {
+	switch t := l.(type) {
+	case int64:
+		return IntValue(int(t)), nil
+	case string:
+		return StrValue(t), nil
+	case float64:
+		return FloatValue(t), nil
+	}
+	return nil, fmt.Errorf("litToValue: Unsupported literal value type %T", l)
 }
