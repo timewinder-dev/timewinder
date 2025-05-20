@@ -2,13 +2,11 @@ package vm
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.starlark.net/syntax"
 )
 
 func TestSmall(t *testing.T) {
@@ -30,15 +28,8 @@ func TestSmall(t *testing.T) {
 
 func fileTest(path string) func(t *testing.T) {
 	return func(t *testing.T) {
-		f, err := os.Open(path)
+		f, err := CompilePath(path)
 		require.NoError(t, err)
-		defer f.Close()
-		opts := syntax.FileOptions{}
-		synFile, err := opts.Parse(path, f, 0)
-		require.NoError(t, err)
-		p, err := buildCompileContextTree(synFile)
-		require.NoError(t, err)
-		p.DebugPrint()
-		t.Logf("%#v", p)
+		f.DebugPrint()
 	}
 }

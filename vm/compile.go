@@ -3,13 +3,22 @@ package vm
 import (
 	"errors"
 	"fmt"
+	"os"
 
+	"github.com/google/uuid"
 	"go.starlark.net/syntax"
 )
 
 type Op struct {
 	Code Opcode
 	Arg  Value
+}
+
+func (o Op) String() string {
+	if o.Arg == nil {
+		return o.Code.String()
+	}
+	return fmt.Sprintf("%s %v", o.Code, o.Arg)
 }
 
 type compileContext struct {
@@ -39,8 +48,12 @@ func (cc *compileContext) emitArg(op Opcode, val Value) {
 	cc.ops = append(cc.ops, Op{Code: op, Arg: val})
 }
 
-func (cc *compileContext) newLabel(label string) {
-	cc.ops = append(cc.ops, Op{Code: NOP, Arg: StrValue(label)})
+func (cc *compileContext) newLabel() string {
+	return uuid.NewString()
+}
+
+func (cc *compileContext) emitLabel(s string) {
+	cc.ops = append(cc.ops, Op{Code: LABEL, Arg: StrValue(s)})
 }
 
 func newCompileContext() *compileContext {
@@ -49,13 +62,76 @@ func newCompileContext() *compileContext {
 	}
 }
 
+func CompilePath(path string) (*Program, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	opts := syntax.FileOptions{}
+	synFile, err := opts.Parse(path, f, 0)
+	if err != nil {
+		return nil, err
+	}
+	return Compile(synFile)
+}
+
 func Compile(file *syntax.File) (*Program, error) {
+	cc, err := buildCompileContextTree(file)
+	if err != nil {
+		return nil, err
+	}
+	return cc.intoProgram()
+}
+
+func (cc *compileContext) intoProgram() (*Program, error) {
 	p := &Program{
 		Definitions: make(map[string]int),
-		Predicates:  make(map[string]int),
+	}
+	if !cc.topLevel {
+		return nil, errors.New("Can't make a program out of a non-top-level context")
+	}
+	f, err := cc.intoFunction()
+	if err != nil {
+		return nil, err
+	}
+	p.Main = f
+	for k, v := range cc.subContext {
+		f, err := v.intoFunction()
+		if err != nil {
+			return nil, err
+		}
+		n := len(p.Code)
+		p.Code = append(p.Code, f)
+		p.Definitions[k] = n
 	}
 	// Top level context
 	return p, nil
+}
+
+func (cc *compileContext) intoFunction() (*Function, error) {
+	f := &Function{}
+	f.Params = cc.params
+	offsetmap := make(map[string]int)
+	for _, b := range cc.ops {
+		if b.Code == LABEL {
+			offsetmap[string(b.Arg.(StrValue))] = len(f.Bytecode)
+			continue
+		}
+		f.Bytecode = append(f.Bytecode, b)
+	}
+	for i, b := range f.Bytecode {
+		switch b.Code {
+		case JMP:
+			fallthrough
+		case JFALSE:
+			if v, ok := b.Arg.(StrValue); ok {
+				b.Arg = IntValue(offsetmap[string(v)])
+			}
+		}
+		f.Bytecode[i] = b // Replace after changes
+	}
+	return f, nil
 }
 
 func buildCompileContextTree(file *syntax.File) (*compileContext, error) {
@@ -111,7 +187,23 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		cc.emit(POP)
 	//case *syntax.ForStmt:
 	//case *syntax.WhileStmt:
-	//case *syntax.IfStmt:
+	case *syntax.IfStmt:
+		err := cc.expr(v.Cond)
+		if err != nil {
+			return err
+		}
+		label := cc.newLabel()
+		cc.emitArg(JFALSE, StrValue(label))
+		cc.buildFromStatements(v.True)
+		if len(v.False) == 0 {
+			cc.emitLabel(label)
+			return nil
+		}
+		endLabel := cc.newLabel()
+		cc.emitArg(JMP, StrValue(endLabel))
+		cc.emitLabel(label)
+		cc.buildFromStatements(v.False)
+		cc.emitLabel(endLabel)
 	case *syntax.LoadStmt:
 		return errors.New("LoadStmt is unimplemented")
 	case *syntax.ReturnStmt:
@@ -197,12 +289,21 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 	//case syntax.RBRACK: // ]
 	//case syntax.LBRACE: // {
 	//case syntax.RBRACE: // }
-	//case syntax.LT: // <
-	//case syntax.GT: // >
-	//case syntax.GE: // >=
-	//case syntax.LE: // <=
-	//case syntax.EQL: // ==
-	//case syntax.NEQ: // !=
+	case syntax.LT: // <
+		cc.emit(LT)
+	case syntax.GT: // >
+		cc.emit(LTE)
+		cc.emit(NOT)
+	case syntax.GE: // >=
+		cc.emit(LT)
+		cc.emit(NOT)
+	case syntax.LE: // <=
+		cc.emit(LTE)
+	case syntax.EQL: // ==
+		cc.emit(EQ)
+	case syntax.NEQ: // !=
+		cc.emit(EQ)
+		cc.emit(NOT)
 	//case syntax.PLUS_EQ: // +=    (keep order consistent with PLUS..GTGT)
 	//case syntax.MINUS_EQ: // -=
 	//case syntax.STAR_EQ: // *=
