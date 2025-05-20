@@ -5,6 +5,7 @@ go 1.24.1
 require go.starlark.net v0.0.0-20250318223901-d9371fef63fe
 
 require (
+	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/goccy/go-yaml v1.17.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
