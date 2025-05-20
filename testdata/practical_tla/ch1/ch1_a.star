@@ -11,7 +11,7 @@ def no_overdrafts():
   return True
 
 def algorithm():
-  yield("Withdraw")
+  step("Withdraw")
   acc[sender] -= amount
-  yield("Deposit") 
+  step("Deposit") 
   acc[receiver] += amount

@@ -4,11 +4,14 @@ type Opcode uint32
 
 const (
 	NOP Opcode = iota
-	// PRE-STACK  TOS TOS+1 ... | OP |  POST-STACK |
-	POP    // A | | NIL
-	PUSH   // NIL | x | A
-	SETVAL // A B | A = B | NIL
-	GETVAL // A | retrieve B given A | B
+	// PRE-STACK ... TOS+1 TOS | OP |  POST-STACK |
+	POP     // A | | NIL
+	PUSH    // NIL | x | A
+	SETVAL  // A B | A = B | NIL
+	GETVAL  // A | retrieve B given A | B
+	GETATTR // A B | C = A[B] | C
+	SETATTR // C A B | A[B] = C |
+	SWAP    // A B | | B A
 
 	ADD      // A B | C = A + B | C
 	SUBTRACT // A B | C = A - B | C
@@ -25,12 +28,23 @@ const (
 
 	RETURN // A | Returns A up a stack frame |
 
+	BUILD_LIST // A B C | 3 | [A B C]
+	BUILD_DICT // [A B] [C D] | 2 | {A: B, C: D}
+
+	ITER_START   // X IT | Pushes to iterator stack, arg is the end label |
+	ITER_START_2 // X Y IT | Pushes to iterator stack, arg is the end label |
+	ITER_NEXT    // Nexts the iteration
+	ITER_END     // Pops the iterator stack prematurely, jumps to end label
+
+	CALL // A B C Fn | arg: 3, calls Fn with the top three args |
+
 	LABEL
 	OpcodeMax
 )
 
 func (o Opcode) String() string {
 	switch o {
+	// Complete the switch with all the opcodes, including the ones that are missing
 	case NOP:
 		return "NOP"
 	case POP:
@@ -63,6 +77,28 @@ func (o Opcode) String() string {
 		return "JFALSE"
 	case RETURN:
 		return "RETURN"
+	case BUILD_LIST:
+		return "BUILD_LIST"
+	case BUILD_DICT:
+		return "BUILD_DICT"
+	case ITER_START:
+		return "ITER_START"
+	case ITER_START_2:
+		return "ITER_START_2"
+	case ITER_NEXT:
+		return "ITER_NEXT"
+	case ITER_END:
+		return "ITER_END"
+	case LABEL:
+		return "LABEL"
+	case SWAP:
+		return "SWAP"
+	case CALL:
+		return "CALL"
+	case GETATTR:
+		return "GETATTR"
+	case SETATTR:
+		return "SETATTR"
 		// Complete all uncovered opcodes
 	}
 	panic("Unnamed opcode")

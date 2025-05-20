@@ -40,12 +40,14 @@ func (cc *compileContext) DebugPrint() {
 	}
 }
 
-func (cc *compileContext) emit(op Opcode) {
-	cc.ops = append(cc.ops, Op{Code: op, Arg: nil})
-}
-
-func (cc *compileContext) emitArg(op Opcode, val Value) {
-	cc.ops = append(cc.ops, Op{Code: op, Arg: val})
+func (cc *compileContext) emit(op Opcode, val ...Value) {
+	if len(val) == 0 {
+		cc.ops = append(cc.ops, Op{Code: op, Arg: nil})
+	} else if len(val) == 1 {
+		cc.ops = append(cc.ops, Op{Code: op, Arg: val[0]})
+	} else {
+		panic("more than one arg to an op")
+	}
 }
 
 func (cc *compileContext) newLabel() string {
@@ -124,6 +126,8 @@ func (cc *compileContext) intoFunction() (*Function, error) {
 		switch b.Code {
 		case JMP:
 			fallthrough
+		case ITER_START:
+			fallthrough
 		case JFALSE:
 			if v, ok := b.Arg.(StrValue); ok {
 				b.Arg = IntValue(offsetmap[string(v)])
@@ -185,7 +189,45 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 			return err
 		}
 		cc.emit(POP)
-	//case *syntax.ForStmt:
+	case *syntax.ForStmt:
+		idents := 0
+		switch vars := v.Vars.(type) {
+		case *syntax.Ident:
+			cc.emit(PUSH, StrValue(vars.Name))
+			idents = 1
+		case *syntax.TupleExpr:
+			if len(vars.List) > 2 {
+				return errors.New("Too many variables in for list")
+			}
+			idents = len(vars.List)
+			for _, id := range vars.List {
+				if v, ok := id.(*syntax.Ident); ok {
+					cc.emit(PUSH, StrValue(v.Name))
+				} else {
+					return errors.New("Non-identifier in for variable")
+				}
+			}
+		default:
+			return errors.New("Unsupported for variables")
+		}
+		err := cc.expr(v.X)
+		if err != nil {
+			return err
+		}
+		endLabel := cc.newLabel()
+		if idents == 1 {
+			cc.emit(ITER_START, StrValue(endLabel))
+		} else if idents == 2 {
+			cc.emit(ITER_START_2, StrValue(endLabel))
+		} else {
+			return errors.New("Too many identifiers")
+		}
+		err = cc.buildFromStatements(v.Body)
+		if err != nil {
+			return err
+		}
+		cc.emit(ITER_NEXT)
+		cc.emit(LABEL, StrValue(endLabel))
 	//case *syntax.WhileStmt:
 	case *syntax.IfStmt:
 		err := cc.expr(v.Cond)
@@ -193,14 +235,14 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 			return err
 		}
 		label := cc.newLabel()
-		cc.emitArg(JFALSE, StrValue(label))
+		cc.emit(JFALSE, StrValue(label))
 		cc.buildFromStatements(v.True)
 		if len(v.False) == 0 {
 			cc.emitLabel(label)
 			return nil
 		}
 		endLabel := cc.newLabel()
-		cc.emitArg(JMP, StrValue(endLabel))
+		cc.emit(JMP, StrValue(endLabel))
 		cc.emitLabel(label)
 		cc.buildFromStatements(v.False)
 		cc.emitLabel(endLabel)
@@ -208,9 +250,12 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		return errors.New("LoadStmt is unimplemented")
 	case *syntax.ReturnStmt:
 		if v.Result == nil {
-			cc.emitArg(PUSH, None)
+			cc.emit(PUSH, None)
 		} else {
-			cc.expr(v.Result)
+			err := cc.expr(v.Result)
+			if err != nil {
+				return err
+			}
 		}
 		cc.emit(RETURN)
 	default:
@@ -231,7 +276,21 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 			return err
 		}
 		return cc.binOp(v.Op)
-	//case *syntax.CallExpr:
+	case *syntax.CallExpr:
+		if ok, err := cc.specialCall(v); ok {
+			return err
+		}
+		for _, a := range v.Args {
+			err := cc.callArg(a)
+			if err != nil {
+				return err
+			}
+		}
+		err := cc.expr(v.Fn)
+		if err != nil {
+			return err
+		}
+		cc.emit(CALL, IntValue(len(v.Args)))
 	case *syntax.Comprehension:
 		return errors.New("Comprehensions are as yet unsupported")
 	case *syntax.CondExpr:
@@ -240,33 +299,93 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 			return err
 		}
 		label := cc.newLabel()
-		cc.emitArg(JFALSE, StrValue(label))
-		cc.expr(v.True)
+		cc.emit(JFALSE, StrValue(label))
+		err = cc.expr(v.True)
+		if err != nil {
+			return err
+		}
 		endLabel := cc.newLabel()
-		cc.emitArg(JMP, StrValue(endLabel))
+		cc.emit(JMP, StrValue(endLabel))
 		cc.emitLabel(label)
-		cc.expr(v.False)
+		err = cc.expr(v.False)
+		if err != nil {
+			return err
+		}
 		cc.emitLabel(endLabel)
-	//case *syntax.DictEntry:
-	//case *syntax.DictExpr:
-	//case *syntax.DotExpr:
+	case *syntax.DictEntry:
+		err := cc.expr(v.Key)
+		if err != nil {
+			return err
+		}
+		err = cc.expr(v.Value)
+		if err != nil {
+			return err
+		}
+		cc.emit(BUILD_LIST, IntValue(2))
+	case *syntax.DictExpr:
+		for _, expr := range v.List {
+			err := cc.expr(expr)
+			if err != nil {
+				return err
+			}
+		}
+		cc.emit(BUILD_DICT, IntValue(len(v.List)))
+	case *syntax.DotExpr:
+		err := cc.expr(v.X)
+		if err != nil {
+			return err
+		}
+		cc.emit(PUSH, StrValue(v.Name.Name))
+		cc.emit(GETATTR)
 	case *syntax.Ident:
-		cc.emitArg(PUSH, StrValue(v.Name))
+		if v.Name == "True" {
+			cc.emit(PUSH, BoolTrue)
+			return nil
+		}
+		if v.Name == "False" {
+			cc.emit(PUSH, BoolFalse)
+			return nil
+		}
+		cc.emit(PUSH, StrValue(v.Name))
 		cc.emit(GETVAL)
-	//case *syntax.IndexExpr:
+	case *syntax.IndexExpr:
+		err := cc.expr(v.X)
+		if err != nil {
+			return err
+		}
+		err = cc.expr(v.Y)
+		if err != nil {
+			return err
+		}
+		cc.emit(GETATTR)
 	case *syntax.LambdaExpr:
 		return errors.New("Lambda expressions are unsupported")
-		//case *syntax.ListExpr:
+	case *syntax.ListExpr:
+		for _, exp := range v.List {
+			err := cc.expr(exp)
+			if err != nil {
+				return err
+			}
+		}
+		cc.emit(BUILD_LIST, IntValue(len(v.List)))
 	case *syntax.Literal:
 		val, err := litToValue(v.Value)
 		if err != nil {
 			return err
 		}
-		cc.emitArg(PUSH, val)
-		//case *syntax.ParenExpr:
-		//case *syntax.SliceExpr:
-		//case *syntax.TupleExpr:
-		//case *syntax.UnaryExpr:
+		cc.emit(PUSH, val)
+	//case *syntax.ParenExpr:
+	//case *syntax.SliceExpr:
+	case *syntax.TupleExpr:
+		for _, exp := range v.List {
+			err := cc.expr(exp)
+			if err != nil {
+				return err
+			}
+		}
+		cc.emit(BUILD_LIST, IntValue(len(v.List)))
+	case *syntax.UnaryExpr:
+		return cc.unary(v)
 	default:
 		return fmt.Errorf("Unhandled expr type %T", e)
 	}
@@ -354,20 +473,76 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 	return nil
 }
 
+func (cc *compileContext) unary(e *syntax.UnaryExpr) error {
+	switch e.Op {
+	default:
+		return fmt.Errorf("compileContext: Unhandled unary operation %#v", e.Op.String())
+	}
+}
+
+func (cc *compileContext) callArg(arg syntax.Expr) error {
+	fmt.Printf("callArg: %T %#v\n", arg, arg)
+	return nil
+}
+
+func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
+	return false, nil
+}
+
 func (cc *compileContext) assign(op syntax.Token, lhs syntax.Expr, rhs syntax.Expr) error {
 	err := cc.expr(rhs)
 	if err != nil {
 		return err
 	}
 	if op != syntax.EQ {
-		return errors.New("+= and similar assignments unimplemented")
+		err := cc.assignSelfReassign(op, lhs)
+		if err != nil {
+			return err
+		}
 	}
 	switch v := lhs.(type) {
 	case *syntax.Ident:
-		cc.emitArg(PUSH, StrValue(v.Name))
+		if v.Name == "True" || v.Name == "False" {
+			return fmt.Errorf("Reassigning `%s` is not allowed", v.Name)
+		}
+		cc.emit(PUSH, StrValue(v.Name))
 		cc.emit(SETVAL)
+	case *syntax.IndexExpr:
+		err := cc.expr(v.X)
+		if err != nil {
+			return err
+		}
+		err = cc.expr(v.Y)
+		if err != nil {
+			return err
+		}
+		cc.emit(SETATTR)
+	case *syntax.DotExpr:
+		err := cc.expr(v.X)
+		if err != nil {
+			return err
+		}
+		cc.emit(PUSH, StrValue(v.Name.Name))
+		cc.emit(SETATTR)
 	default:
 		return fmt.Errorf("assign: Unhandled LHS expr type %T", lhs)
+	}
+	return nil
+}
+
+func (cc *compileContext) assignSelfReassign(op syntax.Token, lhs syntax.Expr) error {
+	err := cc.expr(lhs)
+	if err != nil {
+		return err
+	}
+	switch op {
+	case syntax.PLUS_EQ:
+		cc.emit(ADD)
+	case syntax.MINUS_EQ:
+		cc.emit(SWAP)
+		cc.emit(SUBTRACT)
+	default:
+		return fmt.Errorf("%#v assignments unimplemented", op)
 	}
 	return nil
 }

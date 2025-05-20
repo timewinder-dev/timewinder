@@ -10,7 +10,15 @@ import (
 )
 
 func TestSmall(t *testing.T) {
-	filepath.WalkDir("../testdata/small", func(path string, d fs.DirEntry, err error) error {
+	testDir("../testdata/small", t)
+}
+
+func TestPracticalTLA(t *testing.T) {
+	testDir("../testdata/practical_tla", t)
+}
+
+func testDir(dir string, t *testing.T) {
+	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
