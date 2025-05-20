@@ -232,8 +232,21 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 		}
 		return cc.binOp(v.Op)
 	//case *syntax.CallExpr:
-	//case *syntax.Comprehension:
-	//case *syntax.CondExpr:
+	case *syntax.Comprehension:
+		return errors.New("Comprehensions are as yet unsupported")
+	case *syntax.CondExpr:
+		err := cc.expr(v.Cond)
+		if err != nil {
+			return err
+		}
+		label := cc.newLabel()
+		cc.emitArg(JFALSE, StrValue(label))
+		cc.expr(v.True)
+		endLabel := cc.newLabel()
+		cc.emitArg(JMP, StrValue(endLabel))
+		cc.emitLabel(label)
+		cc.expr(v.False)
+		cc.emitLabel(endLabel)
 	//case *syntax.DictEntry:
 	//case *syntax.DictExpr:
 	//case *syntax.DotExpr:

@@ -1,0 +1,5 @@
+[spec]
+entrypoint = "algorithm"
+
+[properties]
+NoOverdrafts = {Always: "no_overdrafts"}
