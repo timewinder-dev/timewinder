@@ -482,11 +482,39 @@ func (cc *compileContext) unary(e *syntax.UnaryExpr) error {
 
 func (cc *compileContext) callArg(arg syntax.Expr) error {
 	fmt.Printf("callArg: %T %#v\n", arg, arg)
-	return nil
-}
+	switch v := arg.(type) {
+	case *syntax.BinaryExpr:
+		if v.Op != syntax.EQ {
+			return fmt.Errorf("Only = is allowed in a function call")
+		}
+		if g, ok := v.X.(*syntax.Literal); ok {
+			if s, ok := g.Value.(string); !ok {
+				return fmt.Errorf("Only identifiers allowed on the left hand side of a function call argument")
+			} else {
+				err := cc.expr(v.Y)
+				if err != nil {
+					return err
+				}
+				cc.emit(PUSH, StrValue(s))
+				cc.emit(BUILD_ARG)
+			}
+		} else {
+			return fmt.Errorf("Only identifiers are allowed on the left-hand side of a function call argument")
+		}
+	case *syntax.UnaryExpr:
+		if v.Op == syntax.STAR || v.Op == syntax.STARSTAR {
+			return fmt.Errorf("Splats are currently unsupported")
+		}
+	}
+	// fallthrough
+	err := cc.expr(arg)
+	if err != nil {
+		return err
+	}
+	cc.emit(PUSH, None)
+	cc.emit(BUILD_ARG)
 
-func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
-	return false, nil
+	return nil
 }
 
 func (cc *compileContext) assign(op syntax.Token, lhs syntax.Expr, rhs syntax.Expr) error {

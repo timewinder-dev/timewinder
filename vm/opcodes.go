@@ -30,6 +30,7 @@ const (
 
 	BUILD_LIST // A B C | 3 | [A B C]
 	BUILD_DICT // [A B] [C D] | 2 | {A: B, C: D}
+	BUILD_ARG  // A | name | ARG(name, A)
 
 	ITER_START   // X IT | Pushes to iterator stack, arg is the end label |
 	ITER_START_2 // X Y IT | Pushes to iterator stack, arg is the end label |
@@ -37,6 +38,9 @@ const (
 	ITER_END     // Pops the iterator stack prematurely, jumps to end label
 
 	CALL // A B C Fn | arg: 3, calls Fn with the top three args |
+
+	// Here begin the opcodes that are unique to a VM that is trying to run through a search. They should add a value to the stack, but are hints to the execution.
+	YIELD // Arg: step name. Pauses execution and maybe something else runs. Breaks atomicity of actions in a function.
 
 	LABEL
 	OpcodeMax
@@ -81,6 +85,8 @@ func (o Opcode) String() string {
 		return "BUILD_LIST"
 	case BUILD_DICT:
 		return "BUILD_DICT"
+	case BUILD_ARG:
+		return "BUILD_ARG"
 	case ITER_START:
 		return "ITER_START"
 	case ITER_START_2:
@@ -99,6 +105,8 @@ func (o Opcode) String() string {
 		return "GETATTR"
 	case SETATTR:
 		return "SETATTR"
+	case YIELD:
+		return "YIELD"
 		// Complete all uncovered opcodes
 	}
 	panic("Unnamed opcode")

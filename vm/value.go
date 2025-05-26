@@ -61,3 +61,13 @@ func (NoneValue) isValue() {}
 func (NoneValue) AsBool() bool {
 	return false
 }
+
+type ArgValue struct {
+	Key   string
+	Value Value
+}
+
+func (ArgValue) isValue() {}
+func (a ArgValue) AsBool() bool {
+	return a.Value.AsBool()
+}
