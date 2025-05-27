@@ -12,12 +12,16 @@ import (
 )
 
 type Spec struct {
-	Spec       SpecDetails         `toml:""`
-	Properties map[string]Property `toml:",omitempty"`
+	Spec       SpecDetails           `toml:""`
+	Threads    map[string]ThreadSpec `toml:",omitempty"`
+	Properties map[string]Property   `toml:",omitempty"`
 }
 
 type SpecDetails struct {
-	File       string `toml:",omitempty"`
+	File string `toml:",omitempty"`
+}
+
+type ThreadSpec struct {
 	Entrypoint string `toml:",omitempty"`
 }
 
@@ -64,7 +68,8 @@ func (s *Spec) BuildExecutor() (*model.Executor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &model.Executor{
+	exec := &model.Executor{
 		Program: p,
-	}, nil
+	}
+	return exec, nil
 }

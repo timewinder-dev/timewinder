@@ -8,18 +8,15 @@ import (
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
-func NewState(threads int) *State {
+func NewState() *State {
 	return &State{
 		Globals: &StackFrame{},
-		Threads: threads,
-		Stacks:  make([][]*StackFrame, threads),
 	}
 }
 
 func (s *State) Clone() *State {
 	out := &State{
 		Globals: s.Globals.Clone(),
-		Threads: s.Threads,
 	}
 	for _, stack := range s.Stacks {
 		var new []*StackFrame
@@ -31,12 +28,16 @@ func (s *State) Clone() *State {
 	return out
 }
 
-func (f *State) Serialize(w io.Writer) error {
-	return msgpack.MarshalWrite(w, f)
+func (s *State) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, s)
 }
 
-func (f *State) Deserialize(r io.Reader) error {
+func (s *State) Deserialize(r io.Reader) error {
 	return errors.New("deserialize unimplemented")
+}
+
+func (s *State) AddThread(frame *StackFrame) {
+	s.Stacks = append(s.Stacks, []*StackFrame{frame})
 }
 
 func (f *StackFrame) Pop() vm.Value {

@@ -39,7 +39,7 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 			return nil, err
 		}
 		if v == Call {
-			return buildCallFrame(prog, frame, n)
+			return BuildCallFrame(prog, frame, n)
 		}
 		if v == Continue {
 			continue
@@ -48,7 +48,7 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 	}
 }
 
-func buildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, error) {
+func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, error) {
 	if len(frame.Stack) < n+1 {
 		return nil, fmt.Errorf("Call stack is too short to buildCallFrame")
 	}

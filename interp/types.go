@@ -4,7 +4,6 @@ import "github.com/timewinder-dev/timewinder/vm"
 
 type State struct {
 	Globals *StackFrame
-	Threads int
 	Stacks  [][]*StackFrame
 }
 

@@ -1,4 +1,6 @@
 [spec]
+
+[threads.main]
 entrypoint = "algorithm"
 
 [properties]

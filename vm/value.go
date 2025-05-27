@@ -7,6 +7,7 @@ type Value interface {
 	AsBool() bool
 	Clone() Value
 	Cmp(other Value) (int, bool)
+	Expand() ([]Value, error)
 }
 
 type BoolValue bool
@@ -42,6 +43,10 @@ func (b BoolValue) Cmp(other Value) (int, bool) {
 	}
 }
 
+func (b BoolValue) Expand() ([]Value, error) {
+	return nil, nil
+}
+
 type StrValue string
 
 func (StrValue) isValue() {}
@@ -57,6 +62,10 @@ func (s StrValue) Cmp(other Value) (int, bool) {
 		return 0, false
 	}
 	return strings.Compare(string(s), string(v)), true
+}
+
+func (StrValue) Expand() ([]Value, error) {
+	return nil, nil
 }
 
 type IntValue int
@@ -84,6 +93,10 @@ func (i IntValue) Cmp(other Value) (int, bool) {
 	return 1, true
 }
 
+func (IntValue) Expand() ([]Value, error) {
+	return nil, nil
+}
+
 type FloatValue float64
 
 func (FloatValue) isValue() {}
@@ -108,6 +121,10 @@ func (f FloatValue) Cmp(other Value) (int, bool) {
 	return 1, true
 }
 
+func (FloatValue) Expand() ([]Value, error) {
+	return nil, nil
+}
+
 type StructValue map[string]Value
 
 func (StructValue) isValue() {}
@@ -121,6 +138,24 @@ func (s StructValue) Clone() Value {
 		out[k] = v.Clone()
 	}
 	return StructValue(out)
+}
+func (s StructValue) Expand() ([]Value, error) {
+	for k, v := range s {
+		vals, err := v.Expand()
+		if err != nil {
+			return nil, err
+		}
+		if vals != nil {
+			var out []Value
+			for _, v := range vals {
+				n := s.Clone().(StructValue)
+				n[k] = v
+				out = append(out, n)
+			}
+			return out, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s StructValue) Cmp(other Value) (int, bool) {
@@ -145,6 +180,25 @@ func (a ArrayValue) Cmp(other Value) (int, bool) {
 	return 0, false
 }
 
+func (a ArrayValue) Expand() ([]Value, error) {
+	for k, v := range a {
+		vals, err := v.Expand()
+		if err != nil {
+			return nil, err
+		}
+		if vals != nil {
+			var out []Value
+			for _, v := range vals {
+				n := a.Clone().(ArrayValue)
+				n[k] = v
+				out = append(out, n)
+			}
+			return out, nil
+		}
+	}
+	return nil, nil
+}
+
 type NoneValue bool
 
 var None NoneValue = false
@@ -156,6 +210,10 @@ func (NoneValue) AsBool() bool {
 
 func (NoneValue) Clone() Value {
 	return None
+}
+
+func (NoneValue) Expand() ([]Value, error) {
+	return nil, nil
 }
 
 func (NoneValue) Cmp(other Value) (int, bool) {
@@ -184,6 +242,21 @@ func (a ArgValue) Cmp(other Value) (int, bool) {
 	return 0, false
 }
 
+func (a ArgValue) Expand() ([]Value, error) {
+	vs, err := a.Value.Expand()
+	if err != nil {
+		return nil, err
+	}
+	if vs != nil {
+		var out []Value
+		for _, v := range vs {
+			out = append(out, ArgValue{Key: a.Key, Value: v})
+		}
+		return out, nil
+	}
+	return nil, nil
+}
+
 type FnPtrValue ExecPtr
 
 func (FnPtrValue) isValue()       {}
@@ -193,4 +266,7 @@ func (f FnPtrValue) Clone() Value {
 }
 func (f FnPtrValue) Cmp(other Value) (int, bool) {
 	return 0, false
+}
+func (FnPtrValue) Expand() ([]Value, error) {
+	return nil, nil
 }

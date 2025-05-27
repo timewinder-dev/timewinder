@@ -1,10 +1,8 @@
 package model
 
-// The role of an evaluator is to take a State and compare it to the
-// provided invariants, or optionally, take a trace and check against the liveness
-// properties.
-//
-// An Evaluator is intended to be stateless, writing to a CAS and initialized with the
-// predicates.
+import "github.com/timewinder-dev/timewinder/interp"
+
 type Property struct {
+	Name  string
+	Start *interp.StackFrame
 }
