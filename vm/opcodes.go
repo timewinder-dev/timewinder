@@ -7,7 +7,7 @@ const (
 	// PRE-STACK ... TOS+1 TOS | OP |  POST-STACK |
 	POP     // A | | NIL
 	PUSH    // NIL | x | A
-	SETVAL  // A B | A = B | NIL
+	SETVAL  // A B | B = A | NIL
 	GETVAL  // A | retrieve B given A | B
 	GETATTR // A B | C = A[B] | C
 	SETATTR // C A B | A[B] = C |

@@ -2,12 +2,17 @@ package timewinder
 
 import (
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/timewinder-dev/timewinder/model"
+	"github.com/timewinder-dev/timewinder/vm"
 )
 
 type Spec struct {
-	Spec       SpecDetails         `toml:",omitempty"`
+	Spec       SpecDetails         `toml:""`
 	Properties map[string]Property `toml:",omitempty"`
 }
 
@@ -23,8 +28,43 @@ type Property struct {
 	AlwaysEventually string `toml:",omitempty"`
 }
 
-func ParseSpec(f io.Reader) (*Spec, error) {
+func parseSpec(f io.Reader) (*Spec, error) {
 	var out Spec
 	_, err := toml.NewDecoder(f).Decode(&out)
 	return &out, err
+}
+
+func LoadSpecFromFile(path string) (*Spec, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	s, err := parseSpec(f)
+	if err != nil {
+		return nil, err
+	}
+	if s.Spec.File == "" {
+		parts := strings.Split(fi.Name(), ".")
+		parts = parts[:len(parts)-1]
+		parts = append(parts, "star")
+		s.Spec.File = strings.Join(parts, ".")
+	}
+	filedir := filepath.Dir(path)
+	s.Spec.File = filepath.Clean(filepath.Join(filedir, s.Spec.File))
+	return s, nil
+}
+
+func (s *Spec) BuildExecutor() (*model.Executor, error) {
+	p, err := vm.CompilePath(s.Spec.File)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Executor{
+		Program: p,
+	}, nil
 }

@@ -1,6 +1,9 @@
 package vm
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type Program struct {
 	Definitions map[string]int
@@ -16,6 +19,28 @@ func (p *Program) DebugPrint() {
 		fmt.Printf("*** %d:\n", i)
 		f.DebugPrint()
 	}
+}
+
+var ErrEndOfCode = errors.New("End of code block")
+
+func (p *Program) GetInstruction(ptr ExecPtr) (Op, error) {
+	var f *Function
+	if ptr.CodeID() == 0 {
+		f = p.Main
+	} else {
+		f = p.Code[ptr.CodeID()-1]
+	}
+	if len(f.Bytecode) <= ptr.Offset() {
+		return Op{}, ErrEndOfCode
+	}
+	return f.Bytecode[ptr.Offset()], nil
+}
+
+func (p *Program) Resolve(name string) (ExecPtr, bool) {
+	if v, ok := p.Definitions[name]; ok {
+		return NewExecPtr(v), true
+	}
+	return 0, false
 }
 
 type Function struct {
@@ -38,6 +63,18 @@ func (ptr ExecPtr) Offset() int {
 
 func (ptr ExecPtr) CodeID() int {
 	return int(ptr >> 32)
+}
+
+func (ptr ExecPtr) Inc() ExecPtr {
+	return ptr + 1
+}
+
+func (ptr ExecPtr) SetOffset(off int) ExecPtr {
+	return ExecPtr((ptr.CodeID() << 32) | int(0xFFFFFFFF&off))
+}
+
+func NewExecPtr(block int) ExecPtr {
+	return ExecPtr(block << 32)
 }
 
 type FunctionParam struct {
