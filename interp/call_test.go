@@ -14,7 +14,6 @@ def someArgs(x, y, z=3):
 
 func TestFunctionCall(t *testing.T) {
 	prg, err := vm.CompileLiteral(code)
-	prg.DebugPrint()
 	require.NoError(t, err)
 	_, err = FunctionCallFromString(prg, &StackFrame{}, "someArgs()")
 	require.Error(t, err)

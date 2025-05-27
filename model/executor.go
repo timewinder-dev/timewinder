@@ -8,7 +8,7 @@ import (
 // An Executor is the context and entrypoint for runnign a model
 type Executor struct {
 	Program      *vm.Program
-	Properties   []*Property
+	Properties   []Property
 	InitialState *interp.State
 	Threads      []string
 	Engine       Engine
@@ -41,7 +41,11 @@ func (e *Executor) SpawnThread(name string, entrypoint string) error {
 }
 
 func (e *Executor) InitEngine() error {
-	e.Engine = InitSingleThread(e)
+	var err error
+	e.Engine, err = InitSingleThread(e)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
