@@ -3,8 +3,9 @@ package interp
 import "github.com/timewinder-dev/timewinder/vm"
 
 type State struct {
-	Globals *StackFrame
-	Stacks  [][]*StackFrame
+	Globals     *StackFrame
+	Stacks      []StackFrames
+	PauseReason []Pause
 }
 
 type StackFrame struct {
@@ -12,7 +13,22 @@ type StackFrame struct {
 	PC            vm.ExecPtr
 	Variables     map[string]vm.Value
 	IteratorStack []*IteratorState
-	PauseReason   Pause
+}
+
+type StackFrames []*StackFrame
+
+func (s *StackFrames) PopStack() *StackFrame {
+	f := s.CurrentStack()
+	*s = (*s)[:len(*s)-1]
+	return f
+}
+
+func (s *StackFrames) Append(f *StackFrame) {
+	*s = append(*s, f)
+}
+
+func (s StackFrames) CurrentStack() *StackFrame {
+	return s[len(s)-1]
 }
 
 type IteratorState struct {

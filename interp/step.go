@@ -10,11 +10,12 @@ import (
 type StepResult int
 
 const (
-	Continue StepResult = iota
-	Return
-	End
-	Call
-	Error
+	ContinueStep StepResult = iota
+	ReturnStep
+	EndStep
+	CallStep
+	ErrorStep
+	YieldStep
 )
 
 type Program interface {
@@ -24,15 +25,15 @@ type Program interface {
 
 func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult, int, error) {
 	if len(stack) == 0 {
-		return Error, 0, errors.New("No stack frame")
+		return ErrorStep, 0, errors.New("No stack frame")
 	}
 	frame := stack[len(stack)-1]
 	inst, err := program.GetInstruction(frame.PC)
 	if err != nil {
 		if errors.Is(err, vm.ErrEndOfCode) {
-			return End, 0, nil
+			return EndStep, 0, nil
 		}
-		return Error, 0, err
+		return ErrorStep, 0, err
 	}
 	switch inst.Code {
 	case vm.NOP:
@@ -63,7 +64,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		name := frame.Pop()
 		v, err := resolveVar(mustString(name), program, globals, stack)
 		if err != nil {
-			return Error, 0, err
+			return ErrorStep, 0, err
 		}
 		frame.Push(v)
 	case vm.SWAP:
@@ -80,7 +81,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		a := frame.Pop()
 		v, err := add(a, b)
 		if err != nil {
-			return Error, 0, err
+			return ErrorStep, 0, err
 		}
 		frame.Push(v)
 	case vm.MULTIPLY:
@@ -92,7 +93,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		a := frame.Pop()
 		v, err := numericOp(inst.Code, a, b)
 		if err != nil {
-			return Error, 0, err
+			return ErrorStep, 0, err
 		}
 		frame.Push(v)
 	case vm.EQ:
@@ -114,7 +115,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		a := frame.Pop()
 		v, ok := a.Cmp(b)
 		if !ok {
-			return Error, 0, fmt.Errorf("Can't compare %#v to %#v", a, b)
+			return ErrorStep, 0, fmt.Errorf("Can't compare %#v to %#v", a, b)
 		}
 		if v < 0 {
 			frame.Push(vm.BoolTrue)
@@ -126,7 +127,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		a := frame.Pop()
 		v, ok := a.Cmp(b)
 		if !ok {
-			return Error, 0, fmt.Errorf("Can't compare %#v to %#v", a, b)
+			return ErrorStep, 0, fmt.Errorf("Can't compare %#v to %#v", a, b)
 		}
 		if v <= 0 {
 			frame.Push(vm.BoolTrue)
@@ -134,11 +135,11 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			frame.Push(vm.BoolFalse)
 		}
 	case vm.RETURN:
-		return Return, 0, nil
+		return ReturnStep, 0, nil
 	case vm.BUILD_LIST:
 		n, ok := inst.Arg.(vm.IntValue)
 		if !ok {
-			return Error, 0, fmt.Errorf("Error in compilation; BUILD_LIST should carry an int")
+			return ErrorStep, 0, fmt.Errorf("Error in compilation; BUILD_LIST should carry an int")
 		}
 		l := make([]vm.Value, int(n))
 		for i := int(n) - 1; i >= 0; i-- {
@@ -148,18 +149,18 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	case vm.BUILD_DICT:
 		n, ok := inst.Arg.(vm.IntValue)
 		if !ok {
-			return Error, 0, fmt.Errorf("Error in compilation; BUILD_DICT should carry an int")
+			return ErrorStep, 0, fmt.Errorf("Error in compilation; BUILD_DICT should carry an int")
 		}
 		l := make(map[string]vm.Value)
 		for i := 0; i < int(n); i++ {
 			v := frame.Pop()
 			if pair, ok := v.(vm.ArrayValue); ok {
 				if len(pair) != 2 {
-					return Error, 0, fmt.Errorf("Error in compilation; BUILD_DICT expects pairs, not arrays")
+					return ErrorStep, 0, fmt.Errorf("Error in compilation; BUILD_DICT expects pairs, not arrays")
 				}
 				l[mustString(pair[0])] = pair[1]
 			} else {
-				return Error, 0, fmt.Errorf("Error in compilation; BUILD_DICT expects pairs")
+				return ErrorStep, 0, fmt.Errorf("Error in compilation; BUILD_DICT expects pairs")
 			}
 		}
 		frame.Push(vm.StructValue(l))
@@ -173,15 +174,15 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		}
 	case vm.CALL:
 		if v, ok := inst.Arg.(vm.IntValue); ok {
-			return Call, int(v), nil
+			return CallStep, int(v), nil
 		} else {
-			return Error, 0, fmt.Errorf("Error in compilation; CALL should carry an int")
+			return ErrorStep, 0, fmt.Errorf("Error in compilation; CALL should carry an int")
 		}
 	default:
-		return Error, 0, fmt.Errorf("Unhandled step instruction %s", inst.Code)
+		return ErrorStep, 0, fmt.Errorf("Unhandled step instruction %s", inst.Code)
 	}
 	frame.PC = frame.PC.Inc()
-	return Continue, 0, nil
+	return ContinueStep, 0, nil
 }
 
 func add(a, b vm.Value) (vm.Value, error) {

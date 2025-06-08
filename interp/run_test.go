@@ -1,0 +1,64 @@
+package interp
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"github.com/timewinder-dev/timewinder/vm"
+)
+
+type testCase struct {
+	name  string
+	code  string
+	calls []testCall
+}
+
+type testCall struct {
+	callStr  string
+	expected vm.Value
+}
+
+var tt = []testCase{
+	{
+		name: "addTwo",
+		code: `
+def addTwo(x):
+	return x + 2
+		`,
+		calls: []testCall{
+			{
+				callStr:  "addTwo(5)",
+				expected: vm.IntValue(7),
+			},
+			{
+				callStr:  "addTwo(500)",
+				expected: vm.IntValue(502),
+			},
+		},
+	},
+}
+
+func TestRunFunctions(t *testing.T) {
+	for _, test := range tt {
+		t.Run(test.name, func(t *testing.T) {
+			prog, err := vm.CompileLiteral(test.code)
+			require.NoError(t, err)
+			for _, call := range test.calls {
+				sf, err := FunctionCallFromString(prog, nil, call.callStr)
+				require.NoError(t, err)
+				state := NewState()
+				state.AddThread(sf)
+				_, err = RunToPause(prog, state, 0)
+				require.NoError(t, err)
+				val := state.Stacks[0].CurrentStack().Pop()
+				if c, ok := val.Cmp(call.expected); ok {
+					if c != 0 {
+						t.Fatalf("expected %v got %v", call.expected, val)
+					}
+				} else {
+					t.Fatal("Comparison not valid")
+				}
+			}
+		})
+	}
+}

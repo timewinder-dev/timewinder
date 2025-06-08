@@ -25,6 +25,9 @@ func (s *State) Clone() *State {
 		}
 		out.Stacks = append(out.Stacks, new)
 	}
+	for _, p := range s.PauseReason {
+		out.PauseReason = append(out.PauseReason, p)
+	}
 	return out
 }
 
@@ -38,6 +41,7 @@ func (s *State) Deserialize(r io.Reader) error {
 
 func (s *State) AddThread(frame *StackFrame) {
 	s.Stacks = append(s.Stacks, []*StackFrame{frame})
+	s.PauseReason = append(s.PauseReason, Start)
 }
 
 func (f *StackFrame) Pop() vm.Value {
@@ -56,8 +60,7 @@ func (f *StackFrame) Push(v vm.Value) {
 
 func (f *StackFrame) Clone() *StackFrame {
 	out := &StackFrame{
-		PC:          f.PC,
-		PauseReason: f.PauseReason,
+		PC: f.PC,
 	}
 	for _, v := range f.Stack {
 		out.Stack = append(out.Stack, v.Clone())

@@ -27,7 +27,6 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 	if err != nil {
 		return nil, err
 	}
-	callprog.DebugPrint()
 	overlay := &overlayMain{
 		Main:    callprog.Main,
 		Program: prog,
@@ -38,10 +37,10 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 		if err != nil {
 			return nil, err
 		}
-		if v == Call {
+		if v == CallStep {
 			return BuildCallFrame(prog, frame, n)
 		}
-		if v == Continue {
+		if v == ContinueStep {
 			continue
 		}
 		return nil, fmt.Errorf("Calling expression `%s` does not end in a call", callString)
