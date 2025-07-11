@@ -152,7 +152,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			return ErrorStep, 0, fmt.Errorf("Error in compilation; BUILD_DICT should carry an int")
 		}
 		l := make(map[string]vm.Value)
-		for i := 0; i < int(n); i++ {
+		for range int(n) {
 			v := frame.Pop()
 			if pair, ok := v.(vm.ArrayValue); ok {
 				if len(pair) != 2 {

@@ -1,7 +1,7 @@
 [spec]
 
 [threads.main]
-entrypoint = "algorithm"
+entrypoint = "algorithm()"
 
 [properties]
 NoOverdrafts = {Always = "no_overdrafts"}

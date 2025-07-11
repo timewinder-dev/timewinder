@@ -1,4 +1,4 @@
-package timewinder
+package model
 
 import (
 	"io/fs"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestParseSpecInTestdata(t *testing.T) {
-	filepath.WalkDir("testdata", func(path string, d fs.DirEntry, err error) error {
+	filepath.WalkDir("../testdata", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

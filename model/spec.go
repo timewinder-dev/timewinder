@@ -1,4 +1,4 @@
-package timewinder
+package model
 
 import (
 	"io"
@@ -7,14 +7,13 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/timewinder-dev/timewinder/model"
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
 type Spec struct {
-	Spec       SpecDetails           `toml:""`
-	Threads    map[string]ThreadSpec `toml:",omitempty"`
-	Properties map[string]Property   `toml:",omitempty"`
+	Spec       SpecDetails             `toml:""`
+	Threads    map[string]ThreadSpec   `toml:",omitempty"`
+	Properties map[string]PropertySpec `toml:",omitempty"`
 }
 
 type SpecDetails struct {
@@ -25,7 +24,7 @@ type ThreadSpec struct {
 	Entrypoint string `toml:",omitempty"`
 }
 
-type Property struct {
+type PropertySpec struct {
 	Always           string `toml:",omitempty"`
 	Eventually       string `toml:",omitempty"`
 	EventuallyAlways string `toml:",omitempty"`
@@ -63,13 +62,14 @@ func LoadSpecFromFile(path string) (*Spec, error) {
 	return s, nil
 }
 
-func (s *Spec) BuildExecutor() (*model.Executor, error) {
+func (s *Spec) BuildExecutor() (*Executor, error) {
 	p, err := vm.CompilePath(s.Spec.File)
 	if err != nil {
 		return nil, err
 	}
-	exec := &model.Executor{
+	exec := &Executor{
 		Program: p,
+		Spec:    s,
 	}
 	return exec, nil
 }

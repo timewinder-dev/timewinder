@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -56,6 +57,13 @@ func (f *Function) DebugPrint() {
 }
 
 type ExecPtr uint64
+
+func (ptr ExecPtr) MarshalJSON() ([]byte, error) {
+	out := make(map[string]int)
+	out["offset"] = ptr.Offset()
+	out["code_id"] = ptr.CodeID()
+	return json.Marshal(out)
+}
 
 func (ptr ExecPtr) Offset() int {
 	return int(0xFFFFFFFF & ptr)

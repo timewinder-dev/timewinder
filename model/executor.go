@@ -10,15 +10,34 @@ type Executor struct {
 	Program      *vm.Program
 	Properties   []Property
 	InitialState *interp.State
-	Threads      []string
 	Engine       Engine
+	Spec         *Spec
+	Threads      []string
 }
 
 type Engine interface {
 	RunModel() error
 }
 
-func (e *Executor) InitializeGlobal() error {
+func (e *Executor) Initialize() error {
+	err := e.initializeGlobal()
+	if err != nil {
+		return err
+	}
+	for name, s := range e.Spec.Threads {
+		err = e.spawnThread(name, s.Entrypoint)
+		if err != nil {
+			return err
+		}
+	}
+	err = e.initEngine()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Executor) initializeGlobal() error {
 	f := &interp.StackFrame{}
 	_, err := interp.RunToEnd(e.Program, nil, f)
 	if err != nil {
@@ -30,7 +49,7 @@ func (e *Executor) InitializeGlobal() error {
 	return nil
 }
 
-func (e *Executor) SpawnThread(name string, entrypoint string) error {
+func (e *Executor) spawnThread(name string, entrypoint string) error {
 	f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, entrypoint)
 	if err != nil {
 		return err
@@ -40,7 +59,7 @@ func (e *Executor) SpawnThread(name string, entrypoint string) error {
 	return nil
 }
 
-func (e *Executor) InitEngine() error {
+func (e *Executor) initEngine() error {
 	var err error
 	e.Engine, err = InitSingleThread(e)
 	if err != nil {
