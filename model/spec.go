@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -71,5 +72,30 @@ func (s *Spec) BuildExecutor() (*Executor, error) {
 		Program: p,
 		Spec:    s,
 	}
+
+	// Build properties
+	for name, propSpec := range s.Properties {
+		// For now, we only support "Always" properties
+		if propSpec.Always == "" {
+			if propSpec.Eventually != "" {
+				return nil, fmt.Errorf("Eventually properties not yet supported")
+			} else if propSpec.AlwaysEventually != "" {
+				return nil, fmt.Errorf("AlwaysEventually properties not yet supported")
+			} else if propSpec.EventuallyAlways != "" {
+				return nil, fmt.Errorf("EventuallyAlways properties not yet supported")
+			} else {
+				return nil, fmt.Errorf("Property %s has no temporal operator", name)
+			}
+		}
+
+		// Create a property object
+		// The stack frame will be initialized later in initializeProperties()
+		prop := &InterpProperty{
+			Name:     name,
+			Executor: exec,
+		}
+		exec.Properties = append(exec.Properties, prop)
+	}
+
 	return exec, nil
 }

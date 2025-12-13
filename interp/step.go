@@ -152,6 +152,24 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		} else {
 			frame.Push(vm.BoolFalse)
 		}
+	case vm.JMP:
+		// Unconditional jump to label
+		if label, ok := inst.Arg.(vm.IntValue); ok {
+			frame.PC = frame.PC.SetOffset(int(label))
+			return ContinueStep, 0, nil
+		}
+		return ErrorStep, 0, fmt.Errorf("JMP requires integer label")
+	case vm.JFALSE:
+		// Jump to label if top of stack is false
+		cond := frame.Pop()
+		if !cond.AsBool() {
+			if label, ok := inst.Arg.(vm.IntValue); ok {
+				frame.PC = frame.PC.SetOffset(int(label))
+				return ContinueStep, 0, nil
+			}
+			return ErrorStep, 0, fmt.Errorf("JFALSE requires integer label")
+		}
+		// Fall through - don't jump, just continue
 	case vm.RETURN:
 		return ReturnStep, 0, nil
 	case vm.BUILD_LIST:

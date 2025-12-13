@@ -27,6 +27,10 @@ func (e *Executor) Initialize() error {
 	if err != nil {
 		return err
 	}
+	err = e.initializeProperties()
+	if err != nil {
+		return err
+	}
 	for name, s := range e.Spec.Threads {
 		err = e.spawnThread(name, s.Entrypoint)
 		if err != nil {
@@ -48,6 +52,25 @@ func (e *Executor) initializeGlobal() error {
 	}
 	e.InitialState = &interp.State{
 		Globals: f,
+	}
+	return nil
+}
+
+func (e *Executor) initializeProperties() error {
+	// Initialize stack frames for each property
+	for _, prop := range e.Properties {
+		if ip, ok := prop.(*InterpProperty); ok {
+			// Get the property function name from the spec
+			propSpec := e.Spec.Properties[ip.Name]
+			callExpr := propSpec.Always + "()"
+
+			// Create a stack frame to call the property function
+			f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, callExpr)
+			if err != nil {
+				return err
+			}
+			ip.Start = f
+		}
 	}
 	return nil
 }

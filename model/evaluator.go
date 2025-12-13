@@ -24,7 +24,10 @@ type InterpProperty struct {
 }
 
 func (ip *InterpProperty) Check(state *interp.State) (PropertyResult, error) {
-	val, err := interp.RunToEnd(ip.Executor.Program, state.Globals, ip.Start)
+	// Clone the start frame so we don't modify the original
+	frame := ip.Start.Clone()
+
+	val, err := interp.RunToEnd(ip.Executor.Program, state.Globals, frame)
 	if err != nil {
 		// Execution error - something went wrong running the property check
 		return PropertyResult{}, err

@@ -49,7 +49,7 @@ func CheckProperties(state *interp.State, props []Property) error {
 		result, err := prop.Check(state)
 		if err != nil {
 			// Execution error - propagate it
-			return err
+			return fmt.Errorf("Error checking property: %w", err)
 		}
 		if !result.Success {
 			// Property violation - return error with details
