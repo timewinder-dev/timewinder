@@ -1,6 +1,8 @@
 package model
 
 import (
+	"io"
+
 	"github.com/timewinder-dev/timewinder/interp"
 	"github.com/timewinder-dev/timewinder/vm"
 )
@@ -13,6 +15,7 @@ type Executor struct {
 	Engine       Engine
 	Spec         *Spec
 	Threads      []string
+	DebugWriter  io.Writer
 }
 
 type Engine interface {
