@@ -36,9 +36,13 @@ func runCommand(cmd *cobra.Command, args []string) {
 		return
 	}
 	exec.Program.DebugPrint()
-	fmt.Println(string(b))
-	//err = exec.RunModel()
-	//if err != nil {
-	//log.Fatal().Err(err).Msg("Error running model")
-	//}
+	fmt.Println("Initial state:", string(b))
+
+	fmt.Println("Running model checker...")
+	err = exec.RunModel()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Error running model")
+	}
+
+	fmt.Println("Model checking completed successfully - all properties satisfied!")
 }

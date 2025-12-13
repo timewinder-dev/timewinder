@@ -72,6 +72,24 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		b := frame.Pop()
 		frame.Push(a)
 		frame.Push(b)
+	case vm.GETATTR:
+		// Stack: A B -> C where C = A[B]
+		key := frame.Pop()
+		obj := frame.Pop()
+		val, err := getAttribute(obj, key)
+		if err != nil {
+			return ErrorStep, 0, err
+		}
+		frame.Push(val)
+	case vm.SETATTR:
+		// Stack: C A B -> nothing, sets A[B] = C
+		key := frame.Pop()
+		obj := frame.Pop()
+		val := frame.Pop()
+		err := setAttribute(obj, key, val)
+		if err != nil {
+			return ErrorStep, 0, err
+		}
 	case vm.NOT:
 		a := frame.Pop()
 		new := !a.AsBool()
@@ -178,6 +196,13 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		} else {
 			return ErrorStep, 0, fmt.Errorf("Error in compilation; CALL should carry an int")
 		}
+	case vm.YIELD:
+		// Yield execution to allow other threads to run
+		// Push the step name as the "return value" of step()
+		// This documents which step caused the yield
+		frame.Push(inst.Arg)
+		frame.PC = frame.PC.Inc()
+		return YieldStep, 0, nil
 	default:
 		return ErrorStep, 0, fmt.Errorf("Unhandled step instruction %s", inst.Code)
 	}
@@ -267,4 +292,51 @@ func resolveVar(name string, program Program, globals *StackFrame, stack []*Stac
 		return vm.FnPtrValue(v), nil
 	}
 	return nil, fmt.Errorf("No such variable defined: %s", name)
+}
+
+func getAttribute(obj, key vm.Value) (vm.Value, error) {
+	switch o := obj.(type) {
+	case vm.StructValue:
+		// Dictionary access
+		k := mustString(key)
+		if val, ok := o[k]; ok {
+			return val, nil
+		}
+		return nil, fmt.Errorf("Key %s not found in struct", k)
+	case vm.ArrayValue:
+		// Array/list access
+		if idx, ok := key.(vm.IntValue); ok {
+			i := int(idx)
+			if i < 0 || i >= len(o) {
+				return nil, fmt.Errorf("Index %d out of bounds for array of length %d", i, len(o))
+			}
+			return o[i], nil
+		}
+		return nil, fmt.Errorf("Array index must be an integer, got %T", key)
+	default:
+		return nil, fmt.Errorf("Cannot get attribute on type %T", obj)
+	}
+}
+
+func setAttribute(obj, key, val vm.Value) error {
+	switch o := obj.(type) {
+	case vm.StructValue:
+		// Dictionary assignment
+		k := mustString(key)
+		o[k] = val
+		return nil
+	case vm.ArrayValue:
+		// Array/list assignment
+		if idx, ok := key.(vm.IntValue); ok {
+			i := int(idx)
+			if i < 0 || i >= len(o) {
+				return fmt.Errorf("Index %d out of bounds for array of length %d", i, len(o))
+			}
+			o[i] = val
+			return nil
+		}
+		return fmt.Errorf("Array index must be an integer, got %T", key)
+	default:
+		return fmt.Errorf("Cannot set attribute on type %T", obj)
+	}
 }

@@ -515,7 +515,7 @@ Use multiple cores to explore state space faster.
 
 2. **Run the test case** to see current behavior:
    ```bash
-   go build -o timewinder cmd/timewinder/*.go
+   go build -o timewinder ./cmd/timewinder
    ./timewinder run testdata/practical_tla/ch1/ch1_a.toml
    ```
 

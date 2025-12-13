@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 	"github.com/timewinder-dev/timewinder/vm"
@@ -35,7 +37,7 @@ func BuildRunnable(t *Thunk, state *interp.State, lastState cas.Hash) ([]*Thunk,
 				x := n.Clone()
 				x.ToRun = i
 				x.State = s
-				out = append(out)
+				out = append(out, x)
 			}
 		}
 	}
@@ -43,5 +45,16 @@ func BuildRunnable(t *Thunk, state *interp.State, lastState cas.Hash) ([]*Thunk,
 }
 
 func CheckProperties(state *interp.State, props []Property) error {
+	for _, prop := range props {
+		result, err := prop.Check(state)
+		if err != nil {
+			// Execution error - propagate it
+			return err
+		}
+		if !result.Success {
+			// Property violation - return error with details
+			return fmt.Errorf("Property violation: %s", result.Message)
+		}
+	}
 	return nil
 }
