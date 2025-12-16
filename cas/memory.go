@@ -8,16 +8,16 @@ import (
 )
 
 type MemoryCAS struct {
-	data map[Hash]any
+	data map[Hash][]byte
 }
 
 func NewMemoryCAS() *MemoryCAS {
 	return &MemoryCAS{
-		data: make(map[Hash]any),
+		data: make(map[Hash][]byte),
 	}
 }
 
-func (m *MemoryCAS) getValue(h Hash) (bool, any, error) {
+func (m *MemoryCAS) getValue(h Hash) (bool, []byte, error) {
 	v, ok := m.data[h]
 	if !ok {
 		return false, nil, nil
@@ -40,7 +40,8 @@ func (m *MemoryCAS) Put(item Hashable) (Hash, error) {
 	if err != nil {
 		return 0, err
 	}
-	h := Hash(farm.Hash64(buf.Bytes()))
-	m.data[h] = item
+	data := buf.Bytes()
+	h := Hash(farm.Hash64(data))
+	m.data[h] = data
 	return h, nil
 }

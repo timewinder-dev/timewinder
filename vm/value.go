@@ -265,7 +265,17 @@ func (f FnPtrValue) Clone() Value {
 	return FnPtrValue(f)
 }
 func (f FnPtrValue) Cmp(other Value) (int, bool) {
-	return 0, false
+	otherFn, ok := other.(FnPtrValue)
+	if !ok {
+		return 0, false
+	}
+	if f < otherFn {
+		return -1, true
+	}
+	if f > otherFn {
+		return 1, true
+	}
+	return 0, true
 }
 func (FnPtrValue) Expand() ([]Value, error) {
 	return nil, nil

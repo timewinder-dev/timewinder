@@ -1,0 +1,94 @@
+package cas
+
+import (
+	"io"
+
+	"github.com/shamaton/msgpack/v2"
+	"github.com/timewinder-dev/timewinder/interp"
+	"github.com/timewinder-dev/timewinder/vm"
+)
+
+// Thresholds for when to use hash references vs inline storage
+const (
+	MinStructSizeForRef = 3 // Structs with 3+ fields use hash references
+	MinArraySizeForRef  = 5 // Arrays with 5+ elements use hash references
+)
+
+// StateRef is the internal CAS representation of interp.State
+// Instead of storing nested structures inline, it stores hashes that reference them
+type StateRef struct {
+	GlobalsHash  Hash     // Hash of the global StackFrame
+	StacksHashes [][]Hash // For each thread, array of StackFrame hashes
+	PauseReasons []interp.Pause
+}
+
+func (s *StateRef) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, s)
+}
+
+func (s *StateRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, s)
+}
+
+// StackFrameRef is the internal CAS representation of interp.StackFrame
+type StackFrameRef struct {
+	StackHashes    []Hash     // Hash for each Value on the operand stack
+	PC             vm.ExecPtr // Program counter (stored inline, small value)
+	VariableNames  []string   // Variable names (parallel to VariableHashes)
+	VariableHashes []Hash     // Variable value hashes (parallel to VariableNames)
+	IteratorHashes []Hash     // Hash for each IteratorState
+}
+
+func (s *StackFrameRef) Serialize(w io.Writer) error {
+	// Lists are naturally deterministic, no special handling needed
+	return msgpack.MarshalWrite(w, s)
+}
+
+func (s *StackFrameRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, s)
+}
+
+// IteratorStateRef is the internal CAS representation of interp.IteratorState
+type IteratorStateRef struct {
+	Start    vm.ExecPtr // Jump target for loop start
+	End      vm.ExecPtr // Jump target for loop end
+	IterHash Hash       // Hash of the Iterator
+}
+
+func (s *IteratorStateRef) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, s)
+}
+
+func (s *IteratorStateRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, s)
+}
+
+// StructValueRef is used for large vm.StructValue (≥3 fields)
+// Stores hash references instead of inline field values
+type StructValueRef struct {
+	FieldNames  []string // Field names (parallel to FieldHashes)
+	FieldHashes []Hash   // Field value hashes (parallel to FieldNames)
+}
+
+func (s *StructValueRef) Serialize(w io.Writer) error {
+	// Lists are naturally deterministic, no special handling needed
+	return msgpack.MarshalWrite(w, s)
+}
+
+func (s *StructValueRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, s)
+}
+
+// ArrayValueRef is used for large vm.ArrayValue (≥5 elements)
+// Stores hash references instead of inline element values
+type ArrayValueRef struct {
+	ElementHashes []Hash // Hash for each element
+}
+
+func (a *ArrayValueRef) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, a)
+}
+
+func (a *ArrayValueRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, a)
+}
