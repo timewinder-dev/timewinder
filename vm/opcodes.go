@@ -12,6 +12,7 @@ const (
 	GETATTR // A B | C = A[B] | C
 	SETATTR // C A B | A[B] = C |
 	SWAP    // A B | | B A
+	DUP     // A | | A A
 
 	ADD      // A B | C = A + B | C
 	SUBTRACT // A B | C = A - B | C
@@ -99,6 +100,8 @@ func (o Opcode) String() string {
 		return "LABEL"
 	case SWAP:
 		return "SWAP"
+	case DUP:
+		return "DUP"
 	case CALL:
 		return "CALL"
 	case GETATTR:

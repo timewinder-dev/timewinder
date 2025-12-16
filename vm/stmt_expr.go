@@ -116,6 +116,11 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 func (cc *compileContext) expr(e syntax.Expr) error {
 	switch v := e.(type) {
 	case *syntax.BinaryExpr:
+		// Handle short-circuit operators (AND, OR) specially
+		if v.Op == syntax.AND || v.Op == syntax.OR {
+			return cc.shortCircuitBinOp(v)
+		}
+		// Regular binary operators - evaluate both sides first
 		err := cc.expr(v.X)
 		if err != nil {
 			return err
@@ -195,6 +200,10 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 			cc.emit(PUSH, BoolFalse)
 			return nil
 		}
+		if v.Name == "None" {
+			cc.emit(PUSH, None)
+			return nil
+		}
 		cc.emit(PUSH, StrValue(v.Name))
 		cc.emit(GETVAL)
 	case *syntax.IndexExpr:
@@ -223,7 +232,8 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 			return err
 		}
 		cc.emit(PUSH, val)
-	//case *syntax.ParenExpr:
+	case *syntax.ParenExpr:
+		return cc.expr(unparen(v))
 	//case *syntax.SliceExpr:
 	case *syntax.TupleExpr:
 		for _, exp := range v.List {
@@ -239,6 +249,72 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 		return fmt.Errorf("Unhandled expr type %T", e)
 	}
 	return nil
+}
+
+// shortCircuitBinOp handles AND and OR operators with short-circuit evaluation
+func (cc *compileContext) shortCircuitBinOp(e *syntax.BinaryExpr) error {
+	if e.Op == syntax.AND {
+		// AND short-circuit: if left is false, skip right and return false
+		// Code pattern:
+		//   eval left
+		//   DUP               ; duplicate for testing
+		//   JFALSE end_label  ; if false, skip right side
+		//   POP               ; remove the duplicate (left was truthy)
+		//   eval right
+		//   end_label:
+		//   ; result is on stack (left if it was false, right otherwise)
+
+		err := cc.expr(e.X)
+		if err != nil {
+			return err
+		}
+		endLabel := cc.newLabel()
+		cc.emit(DUP)
+		cc.emit(JFALSE, StrValue(endLabel))
+		cc.emit(POP) // Remove the duplicate left value (which was truthy)
+		err = cc.expr(e.Y)
+		if err != nil {
+			return err
+		}
+		cc.emitLabel(endLabel)
+		return nil
+	}
+
+	if e.Op == syntax.OR {
+		// OR short-circuit: if left is true, skip right and return true
+		// Code pattern:
+		//   eval left
+		//   DUP               ; duplicate for testing
+		//   JFALSE else_label ; if false, try right side
+		//   JMP end_label     ; if true, skip right side (keeping duplicate)
+		//   else_label:
+		//   POP               ; remove the duplicate false value
+		//   eval right
+		//   end_label:
+		//   ; result is on stack (left if it was true, right otherwise)
+
+		err := cc.expr(e.X)
+		if err != nil {
+			return err
+		}
+		elseLabel := cc.newLabel()
+		endLabel := cc.newLabel()
+		cc.emit(DUP)
+		cc.emit(JFALSE, StrValue(elseLabel))
+		// Left was truthy, skip right side
+		cc.emit(JMP, StrValue(endLabel))
+		cc.emitLabel(elseLabel)
+		// Left was falsy, eval right side
+		cc.emit(POP) // Remove the duplicate false value
+		err = cc.expr(e.Y)
+		if err != nil {
+			return err
+		}
+		cc.emitLabel(endLabel)
+		return nil
+	}
+
+	return fmt.Errorf("shortCircuitBinOp: unexpected op %v", e.Op)
 }
 
 func (cc *compileContext) binOp(op syntax.Token) error {
@@ -323,10 +399,25 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 }
 
 func (cc *compileContext) unary(e *syntax.UnaryExpr) error {
+	err := cc.expr(e.X)
+	if err != nil {
+		return err
+	}
 	switch e.Op {
+	case syntax.NOT:
+		cc.emit(NOT)
+	case syntax.MINUS:
+		// Unary minus: 0 - x
+		cc.emit(PUSH, IntValue(0))
+		cc.emit(SWAP)
+		cc.emit(SUBTRACT)
+	case syntax.PLUS:
+		// Unary plus is a no-op
+		// Value is already on stack
 	default:
 		return fmt.Errorf("compileContext: Unhandled unary operation %#v", e.Op.String())
 	}
+	return nil
 }
 
 func (cc *compileContext) callArg(arg syntax.Expr) error {

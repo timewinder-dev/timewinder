@@ -72,6 +72,10 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		b := frame.Pop()
 		frame.Push(a)
 		frame.Push(b)
+	case vm.DUP:
+		a := frame.Pop()
+		frame.Push(a.Clone())
+		frame.Push(a)
 	case vm.GETATTR:
 		// Stack: A B -> C where C = A[B]
 		key := frame.Pop()
