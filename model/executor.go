@@ -3,19 +3,22 @@ package model
 import (
 	"io"
 
+	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
 // An Executor is the context and entrypoint for runnign a model
 type Executor struct {
-	Program      *vm.Program
-	Properties   []Property
-	InitialState *interp.State
-	Engine       Engine
-	Spec         *Spec
-	Threads      []string
-	DebugWriter  io.Writer
+	Program       *vm.Program
+	Properties    []Property
+	InitialState  *interp.State
+	Engine        Engine
+	Spec          *Spec
+	Threads       []string
+	DebugWriter   io.Writer
+	CAS           *cas.MemoryCAS
+	VisitedStates map[cas.Hash]bool
 }
 
 type Engine interface {
@@ -27,6 +30,11 @@ func (e *Executor) Initialize() error {
 	if err != nil {
 		return err
 	}
+
+	// Initialize CAS and visited states tracking
+	e.CAS = cas.NewMemoryCAS()
+	e.VisitedStates = make(map[cas.Hash]bool)
+
 	err = e.initializeProperties()
 	if err != nil {
 		return err

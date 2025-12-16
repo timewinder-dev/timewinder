@@ -1,8 +1,13 @@
 package cas
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"reflect"
+
+	"github.com/timewinder-dev/timewinder/interp"
 )
 
 type CAS interface {
@@ -21,21 +26,63 @@ type Hashable interface {
 }
 
 type directStore interface {
-	getValue(h Hash) (bool, any, error)
+	getValue(h Hash) (bool, []byte, error)
 }
 
 type Hash uint64
 
 func Retrieve[T Hashable](c CAS, hash Hash) (T, error) {
 	var t T
-	if v, ok := c.(directStore); ok {
-		has, val, err := v.getValue(hash)
-		if err != nil {
-			return t, err
-		}
-		if has {
-			return val.(T), nil
-		}
+	v, ok := c.(directStore)
+	if !ok {
+		return t, errors.New("CAS does not support direct retrieval")
 	}
-	return t, errors.New("Couldn't find hash in CAS")
+
+	has, data, err := v.getValue(hash)
+	if err != nil {
+		return t, err
+	}
+	if !has {
+		return t, fmt.Errorf("hash not found in CAS: %d", hash)
+	}
+
+	// Check if we're retrieving a State - handle recomposition
+	var zeroT T
+	targetType := reflect.TypeOf(zeroT)
+	if targetType == reflect.TypeOf((*interp.State)(nil)) {
+		// Recompose State from StateRef
+		state, err := recomposeState(c.(*MemoryCAS), hash)
+		if err != nil {
+			return t, fmt.Errorf("recomposing State: %w", err)
+		}
+		return any(state).(T), nil
+	}
+
+	// For other types, deserialize directly from bytes
+	// First deserialize the TypedEntry to get the actual data
+	typedEntry := &TypedEntry{}
+	buf := bytes.NewReader(data)
+	err = typedEntry.Deserialize(buf)
+	if err != nil {
+		return t, fmt.Errorf("deserializing TypedEntry: %w", err)
+	}
+
+	// Create instance and deserialize
+	instance, err := createInstance(typedEntry.TypeTag)
+	if err != nil {
+		return t, fmt.Errorf("creating instance: %w", err)
+	}
+
+	dataBuf := bytes.NewReader(typedEntry.Data)
+	err = instance.Deserialize(dataBuf)
+	if err != nil {
+		return t, fmt.Errorf("deserializing data: %w", err)
+	}
+
+	result, ok := instance.(T)
+	if !ok {
+		return t, fmt.Errorf("type mismatch: expected %T, got %T", t, instance)
+	}
+
+	return result, nil
 }

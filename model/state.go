@@ -16,7 +16,7 @@ type Thunk struct {
 func (t Thunk) Clone() *Thunk {
 	return &Thunk{
 		ToRun: t.ToRun,
-		State: t.State,
+		State: t.State.Clone(),
 		Trace: slices.Clone(t.Trace),
 	}
 }

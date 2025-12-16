@@ -1,7 +1,6 @@
 package interp
 
 import (
-	"errors"
 	"io"
 
 	"github.com/shamaton/msgpack/v2"
@@ -36,7 +35,7 @@ func (s *State) Serialize(w io.Writer) error {
 }
 
 func (s *State) Deserialize(r io.Reader) error {
-	return errors.New("deserialize unimplemented")
+	return msgpack.UnmarshalRead(r, s)
 }
 
 func (s *State) AddThread(frame *StackFrame) {

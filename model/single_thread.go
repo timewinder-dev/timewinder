@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/timewinder-dev/timewinder/interp"
 )
@@ -41,6 +42,15 @@ func (s *SingleThreadEngine) RunModel() error {
 	depth := 0
 	w := s.Executor.DebugWriter
 
+	// Always print statistics on exit, even if there's an error
+	defer func() {
+		fmt.Fprintf(os.Stderr, "\n=== Model checking statistics ===\n")
+		fmt.Fprintf(os.Stderr, "Total state transitions attempted: %d\n", stateCount)
+		fmt.Fprintf(os.Stderr, "Unique states found: %d\n", len(s.Executor.VisitedStates))
+		fmt.Fprintf(os.Stderr, "Duplicate states pruned: %d\n", stateCount-len(s.Executor.VisitedStates))
+		fmt.Fprintf(os.Stderr, "Maximum depth: %d\n", depth)
+	}()
+
 	for {
 		fmt.Fprintf(w, "\n=== Depth %d: Exploring %d states ===\n", depth, len(s.Queue))
 
@@ -69,12 +79,16 @@ func (s *SingleThreadEngine) RunModel() error {
 
 			fmt.Fprintf(w, "✓ All properties satisfied\n")
 
-			next, err := BuildRunnable(t, st, 0)
+			next, err := BuildRunnable(t, st, s.Executor)
 			if err != nil {
 				return err
 			}
 
-			fmt.Fprintf(w, "Generated %d successor states\n", len(next))
+			if next == nil {
+				fmt.Fprintf(w, "State already visited (cycle detected)\n")
+			} else {
+				fmt.Fprintf(w, "Generated %d successor states\n", len(next))
+			}
 
 			s.NextQueue = append(s.NextQueue, next...)
 		}
@@ -85,10 +99,6 @@ func (s *SingleThreadEngine) RunModel() error {
 		s.NextQueue = nil
 		depth++
 	}
-
-	fmt.Fprintf(w, "\n=== Model checking complete ===\n")
-	fmt.Fprintf(w, "Total states explored: %d\n", stateCount)
-	fmt.Fprintf(w, "Maximum depth: %d\n", depth)
 
 	return nil
 }
