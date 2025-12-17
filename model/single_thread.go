@@ -36,6 +36,8 @@ func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
 				Program:      exec.Program,
 				ThreadID:     -1, // No thread ran yet
 				ThreadName:   "(initial state)",
+				ShowDetails:  exec.ShowDetails,
+				CAS:          exec.CAS,
 			}
 
 			if exec.KeepGoing {
@@ -133,6 +135,8 @@ func (s *SingleThreadEngine) RunModel() error {
 					Program:      s.Executor.Program,
 					ThreadID:     t.ToRun,
 					ThreadName:   s.Executor.Threads[t.ToRun],
+					ShowDetails:  s.Executor.ShowDetails,
+					CAS:          s.Executor.CAS,
 				}
 
 				if s.Executor.KeepGoing {

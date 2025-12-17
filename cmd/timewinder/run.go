@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	debugFlag bool
-	keepGoing bool
+	debugFlag    bool
+	keepGoing    bool
+	detailsFlag  bool
 )
 
 var runCmd = &cobra.Command{
@@ -26,6 +27,7 @@ var runCmd = &cobra.Command{
 func init() {
 	runCmd.Flags().BoolVar(&debugFlag, "debug", false, "Enable debug output to see each execution step")
 	runCmd.Flags().BoolVar(&keepGoing, "keep-going", false, "Keep checking the model after reporting it's first error")
+	runCmd.Flags().BoolVar(&detailsFlag, "details", false, "Show detailed trace reconstruction when property violations occur")
 }
 
 func runCommand(cmd *cobra.Command, args []string) {
@@ -58,6 +60,9 @@ func runCommand(cmd *cobra.Command, args []string) {
 	}
 	if keepGoing {
 		exec.KeepGoing = true
+	}
+	if detailsFlag {
+		exec.ShowDetails = true
 	}
 
 	fmt.Println("Running model checker...")

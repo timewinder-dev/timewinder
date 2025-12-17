@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
@@ -21,6 +22,8 @@ type PropertyViolation struct {
 	Program      *vm.Program   // The program being checked
 	ThreadID     int           // Which thread caused the violation (-1 for initial state)
 	ThreadName   string        // Name of the thread that caused the violation
+	ShowDetails  bool          // Whether to show detailed trace reconstruction
+	CAS          *cas.MemoryCAS // For retrieving states during trace reconstruction
 }
 
 // An Executor is the context and entrypoint for runnign a model
@@ -35,6 +38,7 @@ type Executor struct {
 	CAS           *cas.MemoryCAS
 	VisitedStates map[cas.Hash]bool
 	KeepGoing     bool
+	ShowDetails   bool                // Show detailed trace reconstruction
 	Violations    []PropertyViolation // Track all violations found
 }
 
@@ -133,55 +137,159 @@ func (e *Executor) RunModel() error {
 // FormatPropertyViolation formats a single property violation for display
 func FormatPropertyViolation(v PropertyViolation) string {
 	var result string
-	result += fmt.Sprintf("\n╔═══════════════════════════════════════════════════════════════╗\n")
-	result += fmt.Sprintf("║ PROPERTY VIOLATION                                            ║\n")
-	result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
-	result += fmt.Sprintf("║ Property: %-52s║\n", v.PropertyName)
+	result += fmt.Sprintf("\n================================================================================\n")
+	result += fmt.Sprintf("PROPERTY VIOLATION\n")
+	result += fmt.Sprintf("================================================================================\n")
+	result += fmt.Sprintf("Property: %s\n", v.PropertyName)
 
 	// Prominently display which thread caused the violation
 	if v.ThreadID >= 0 {
-		threadInfo := fmt.Sprintf("Thread %d (%s)", v.ThreadID, v.ThreadName)
-		result += fmt.Sprintf("║ Thread:   %-52s║\n", threadInfo)
+		result += fmt.Sprintf("Thread:   Thread %d (%s)\n", v.ThreadID, v.ThreadName)
 	} else {
-		result += fmt.Sprintf("║ Thread:   %-52s║\n", v.ThreadName)
+		result += fmt.Sprintf("Thread:   %s\n", v.ThreadName)
 	}
 
-	result += fmt.Sprintf("║ Message:  %-52s║\n", v.Message)
-	result += fmt.Sprintf("║ State:    #%-50d║\n", v.StateNumber)
-	result += fmt.Sprintf("║ Depth:    %-52d║\n", v.Depth)
-	result += fmt.Sprintf("║ Hash:     0x%-49x║\n", v.StateHash)
-	result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
-	result += fmt.Sprintf("║ Execution Trace:                                              ║\n")
+	result += fmt.Sprintf("Message:  %s\n", v.Message)
+	result += fmt.Sprintf("State:    #%d\n", v.StateNumber)
+	result += fmt.Sprintf("Depth:    %d\n", v.Depth)
+	result += fmt.Sprintf("Hash:     0x%x\n", v.StateHash)
+	result += fmt.Sprintf("\n--------------------------------------------------------------------------------\n")
+	result += fmt.Sprintf("Execution Trace:\n")
+	result += fmt.Sprintf("--------------------------------------------------------------------------------\n")
 
 	if len(v.Trace) == 0 {
-		result += fmt.Sprintf("║   (Initial state - no execution yet)                          ║\n")
+		result += fmt.Sprintf("  (Initial state - no execution yet)\n")
 	} else {
-		for i, step := range v.Trace {
-			result += fmt.Sprintf("║   %2d. Thread %d → State 0x%08x%-24s║\n",
-				i+1, step.ThreadRan, step.StateHash, "")
+		// Show detailed trace if --details flag is set
+		if v.ShowDetails && v.Program != nil && v.CAS != nil {
+			result += reconstructTrace(v)
+		} else {
+			// Simple trace - just show thread and state hash
+			for i, step := range v.Trace {
+				result += fmt.Sprintf("  %2d. Thread %d → State 0x%x\n",
+					i+1, step.ThreadRan, step.StateHash)
+			}
+
+			// Show final state information in simple mode
+			if v.State != nil {
+				result += fmt.Sprintf("\n--------------------------------------------------------------------------------\n")
+				result += fmt.Sprintf("Final State:\n")
+				result += fmt.Sprintf("--------------------------------------------------------------------------------\n")
+				stateStr := v.State.PrettyPrint(v.Program)
+				result += stateStr
+			}
 		}
 	}
 
-	// Add state information if available
-	if v.State != nil {
-		result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
-		result += fmt.Sprintf("║ State Information:                                            ║\n")
-		result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
+	result += fmt.Sprintf("================================================================================\n")
+	return result
+}
 
-		// Get pretty-printed state
-		stateStr := v.State.PrettyPrint(v.Program)
-		// Format each line to fit in the box
+// reconstructTrace reconstructs detailed trace from CAS, showing state at each step
+func reconstructTrace(v PropertyViolation) string {
+	var result string
+
+	for i, step := range v.Trace {
+		// Retrieve state from CAS
+		state, err := cas.Retrieve[*interp.State](v.CAS, step.StateHash)
+		if err != nil {
+			// If we can't retrieve, fall back to simple display
+			result += fmt.Sprintf("\n  Step %d: Thread %d → State 0x%x (unavailable)\n",
+				i+1, step.ThreadRan, step.StateHash)
+			continue
+		}
+
+		// Header for this step
+		result += fmt.Sprintf("\n  Step %d:\n", i+1)
+		result += fmt.Sprintf("  ├─ Thread: %d\n", step.ThreadRan)
+
+		// Get thread info
+		if step.ThreadRan >= 0 && step.ThreadRan < len(state.Stacks) {
+			stack := state.Stacks[step.ThreadRan]
+			if len(stack) > 0 {
+				currentFrame := stack[len(stack)-1]
+				pc := currentFrame.PC
+				pauseReason := state.PauseReason[step.ThreadRan]
+
+				// Get location info
+				lineNum := v.Program.GetLineNumber(pc)
+				filename := v.Program.GetFilename(pc)
+
+				// Get step name if yielded
+				stepName := ""
+				if pauseReason == interp.Yield && len(currentFrame.Stack) > 0 {
+					if topValue, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.StrValue); ok {
+						stepName = string(topValue)
+					}
+				}
+
+				// Show location and step
+				if stepName != "" {
+					result += fmt.Sprintf("  ├─ Action: %s\n", stepName)
+				}
+				if filename != "" && lineNum > 0 {
+					basename := filepath.Base(filename)
+					result += fmt.Sprintf("  ├─ Location: %s:%d\n", basename, lineNum)
+				}
+				result += fmt.Sprintf("  ├─ Status: %s\n", pauseReason)
+			}
+		}
+
+		// Show state information
+		result += fmt.Sprintf("  └─ State:\n")
+		stateStr := state.PrettyPrint(v.Program)
+		// Indent the state output
 		lines := splitIntoLines(stateStr)
 		for _, line := range lines {
-			// Truncate if too long
-			if len(line) > 61 {
-				line = line[:58] + "..."
-			}
-			result += fmt.Sprintf("║ %-62s║\n", line)
+			result += fmt.Sprintf("     %s\n", line)
 		}
 	}
 
-	result += fmt.Sprintf("╚═══════════════════════════════════════════════════════════════╝\n")
+	// Show the final state that caused the violation
+	if v.State != nil {
+		result += fmt.Sprintf("\n  Final State (violation):\n")
+		result += fmt.Sprintf("  ├─ Thread: %d\n", v.ThreadID)
+
+		// Get info about the violating thread
+		if v.ThreadID >= 0 && v.ThreadID < len(v.State.Stacks) {
+			stack := v.State.Stacks[v.ThreadID]
+			if len(stack) > 0 {
+				currentFrame := stack[len(stack)-1]
+				pc := currentFrame.PC
+				pauseReason := v.State.PauseReason[v.ThreadID]
+
+				// Get location info
+				lineNum := v.Program.GetLineNumber(pc)
+				filename := v.Program.GetFilename(pc)
+
+				// Get step name if yielded
+				stepName := ""
+				if pauseReason == interp.Yield && len(currentFrame.Stack) > 0 {
+					if topValue, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.StrValue); ok {
+						stepName = string(topValue)
+					}
+				}
+
+				// Show location and step
+				if stepName != "" {
+					result += fmt.Sprintf("  ├─ Action: %s\n", stepName)
+				}
+				if filename != "" && lineNum > 0 {
+					basename := filepath.Base(filename)
+					result += fmt.Sprintf("  ├─ Location: %s:%d\n", basename, lineNum)
+				}
+				result += fmt.Sprintf("  ├─ Status: %s\n", pauseReason)
+			}
+		}
+
+		result += fmt.Sprintf("  └─ State:\n")
+		stateStr := v.State.PrettyPrint(v.Program)
+		lines := splitIntoLines(stateStr)
+		for _, line := range lines {
+			result += fmt.Sprintf("     %s\n", line)
+		}
+	}
+
 	return result
 }
 
@@ -214,9 +322,9 @@ func FormatAllViolations(violations []PropertyViolation) string {
 
 	var result string
 	result += fmt.Sprintf("\n\n")
-	result += fmt.Sprintf("═══════════════════════════════════════════════════════════════\n")
-	result += fmt.Sprintf("  PROPERTY VIOLATIONS FOUND: %d\n", len(violations))
-	result += fmt.Sprintf("═══════════════════════════════════════════════════════════════\n")
+	result += fmt.Sprintf("================================================================================\n")
+	result += fmt.Sprintf("PROPERTY VIOLATIONS FOUND: %d\n", len(violations))
+	result += fmt.Sprintf("================================================================================\n")
 
 	for i, v := range violations {
 		result += fmt.Sprintf("\nViolation #%d:\n", i+1)

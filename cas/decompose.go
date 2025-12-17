@@ -319,6 +319,10 @@ func getValueTypeTag(v vm.Value) string {
 		return "ArrayValue"
 	case vm.ArgValue:
 		return "ArgValue"
+	case vm.BuiltinValue:
+		return "BuiltinValue"
+	case vm.NonDetValue:
+		return "NonDetValue"
 	default:
 		return fmt.Sprintf("%T", v)
 	}
