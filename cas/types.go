@@ -37,6 +37,8 @@ func init() {
 	registerType("StateRef", &StateRef{})
 	registerType("StackFrameRef", &StackFrameRef{})
 	registerType("IteratorStateRef", &IteratorStateRef{})
+	registerType("SliceIteratorData", &SliceIteratorData{})
+	registerType("DictIteratorData", &DictIteratorData{})
 	registerType("StructValueRef", &StructValueRef{})
 	registerType("ArrayValueRef", &ArrayValueRef{})
 

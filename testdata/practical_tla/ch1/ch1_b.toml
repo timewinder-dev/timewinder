@@ -1,0 +1,15 @@
+# Two Wire processes transferring money concurrently
+# This tests interleaving of two threads doing the same operation
+
+[spec]
+
+# Thread 1: First wire transfer
+[threads.wire1]
+entrypoint = "main()"
+
+# Thread 2: Second wire transfer (runs concurrently)
+[threads.wire2]
+entrypoint = "main()"
+
+[properties]
+NoOverdrafts = {Always = "no_overdrafts"}

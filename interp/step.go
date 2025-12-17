@@ -31,9 +31,6 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	}
 	frame := stack[len(stack)-1]
 	inst, err := program.GetInstruction(frame.PC)
-	if err == nil {
-		fmt.Printf("DEBUG Step: PC=%v, opcode=%s, stack_len=%d\n", frame.PC, inst.Code, len(frame.Stack))
-	}
 	if err != nil {
 		if errors.Is(err, vm.ErrEndOfCode) {
 			return EndStep, 0, nil
@@ -265,8 +262,8 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			return ErrorStep, 0, fmt.Errorf("Cannot iterate over %T", iterable)
 		}
 
-		// Get end label from instruction arg
-		endLabel := vm.ExecPtr(inst.Arg.(vm.IntValue))
+		// Get end label from instruction arg (preserve CodeID, set offset)
+		endLabel := frame.PC.SetOffset(int(inst.Arg.(vm.IntValue)))
 
 		// Create and push IteratorState
 		iterState := &IteratorState{
@@ -324,7 +321,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		}
 
 		// Same logic as ITER_START
-		endLabel := vm.ExecPtr(inst.Arg.(vm.IntValue))
+		endLabel := frame.PC.SetOffset(int(inst.Arg.(vm.IntValue)))
 		iterState := &IteratorState{
 			Start:    frame.PC.Inc(),
 			End:      endLabel,
@@ -351,17 +348,13 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		iterState := frame.IteratorStack[len(frame.IteratorStack)-1]
 		iter := iterState.Iter
 
-		fmt.Printf("DEBUG ITER_NEXT: calling Next(), current Index=%d\n", iter.(*DictIterator).Index)
 		// Try to advance to next element
 		if !iter.Next() {
 			// Iterator exhausted, pop it and exit loop
-			fmt.Printf("DEBUG ITER_NEXT: Iterator exhausted, jumping to End=%v\n", iterState.End)
 			frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
 			frame.PC = iterState.End
 			return ContinueStep, 0, nil
 		}
-
-		fmt.Printf("DEBUG ITER_NEXT: More elements, setting vars and jumping to Start=%v\n", iterState.Start)
 		// More elements, update loop variables and jump back to loop start
 		if len(iterState.VarNames) == 1 {
 			frame.StoreVar(iterState.VarNames[0], iter.Var1())

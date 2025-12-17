@@ -53,6 +53,7 @@ type IteratorStateRef struct {
 	Start    vm.ExecPtr // Jump target for loop start
 	End      vm.ExecPtr // Jump target for loop end
 	IterHash Hash       // Hash of the Iterator
+	VarNames []string   // Loop variable names
 }
 
 func (s *IteratorStateRef) Serialize(w io.Writer) error {
@@ -61,6 +62,37 @@ func (s *IteratorStateRef) Serialize(w io.Writer) error {
 
 func (s *IteratorStateRef) Deserialize(r io.Reader) error {
 	return msgpack.UnmarshalRead(r, s)
+}
+
+// SliceIteratorData stores SliceIterator state for CAS
+type SliceIteratorData struct {
+	ValueHashes []Hash // Hashes of each element in Values
+	Index       int    // Current position in iteration
+	VarCount    int    // 1 or 2 variables
+}
+
+func (s *SliceIteratorData) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, s)
+}
+
+func (s *SliceIteratorData) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, s)
+}
+
+// DictIteratorData stores DictIterator state for CAS
+type DictIteratorData struct {
+	DictHash Hash     // Hash of the Dict StructValue
+	Keys     []string // Sorted keys
+	Index    int      // Current position in iteration
+	VarCount int      // Should be 2 (key, value)
+}
+
+func (d *DictIteratorData) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, d)
+}
+
+func (d *DictIteratorData) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, d)
 }
 
 // StructValueRef is used for large vm.StructValue (≥3 fields)

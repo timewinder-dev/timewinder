@@ -91,22 +91,78 @@ func recomposeStackFrame(c *MemoryCAS, hash Hash) (*interp.StackFrame, error) {
 
 // recomposeIteratorState reconstructs an IteratorState from an IteratorStateRef
 func recomposeIteratorState(c *MemoryCAS, hash Hash) (*interp.IteratorState, error) {
+	if hash == 0 {
+		return nil, fmt.Errorf("cannot recompose from zero hash")
+	}
+
 	// Retrieve the IteratorStateRef
 	ref, err := getDirect[*IteratorStateRef](c, hash)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving IteratorStateRef: %w", err)
 	}
 
-	// Reconstruct iterator
-	// TODO: Handle iterator reconstruction properly
-	// For now, we return nil since we didn't store it properly in decompose
-	var iter interp.Iterator = nil
+	// Recompose the iterator
+	iter, err := recomposeIterator(c, ref.IterHash)
+	if err != nil {
+		return nil, fmt.Errorf("recomposing iterator: %w", err)
+	}
 
+	// Reconstruct IteratorState
 	return &interp.IteratorState{
-		Start: ref.Start,
-		End:   ref.End,
-		Iter:  iter,
+		Start:    ref.Start,
+		End:      ref.End,
+		Iter:     iter,
+		VarNames: ref.VarNames,
 	}, nil
+}
+
+// recomposeIterator reconstructs an Iterator from CAS
+func recomposeIterator(c *MemoryCAS, hash Hash) (interp.Iterator, error) {
+	if hash == 0 {
+		return nil, fmt.Errorf("cannot recompose from zero hash")
+	}
+
+	// Try to retrieve as SliceIteratorData first
+	if sliceData, err := getDirect[*SliceIteratorData](c, hash); err == nil {
+		// Recompose values
+		values := make([]vm.Value, len(sliceData.ValueHashes))
+		for i, vh := range sliceData.ValueHashes {
+			val, err := recomposeValue(c, vh)
+			if err != nil {
+				return nil, fmt.Errorf("recomposing slice value %d: %w", i, err)
+			}
+			values[i] = val
+		}
+
+		return &interp.SliceIterator{
+			Values:   values,
+			Index:    sliceData.Index,
+			VarCount: sliceData.VarCount,
+		}, nil
+	}
+
+	// Try DictIteratorData
+	if dictData, err := getDirect[*DictIteratorData](c, hash); err == nil {
+		// Recompose dict
+		dictVal, err := recomposeValue(c, dictData.DictHash)
+		if err != nil {
+			return nil, fmt.Errorf("recomposing dict: %w", err)
+		}
+
+		dict, ok := dictVal.(vm.StructValue)
+		if !ok {
+			return nil, fmt.Errorf("expected StructValue, got %T", dictVal)
+		}
+
+		return &interp.DictIterator{
+			Dict:     dict,
+			Keys:     dictData.Keys,
+			Index:    dictData.Index,
+			VarCount: dictData.VarCount,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("could not recompose iterator from hash %x", hash)
 }
 
 // recomposeValue reconstructs a vm.Value from the CAS

@@ -120,23 +120,57 @@ func decomposeIteratorState(c *MemoryCAS, iter *interp.IteratorState) (Hash, err
 		Start:    iter.Start,
 		End:      iter.End,
 		IterHash: iterHash,
+		VarNames: iter.VarNames,
 	}
 
 	return putDirect(c, ref)
 }
 
-// decomposeIterator decomposes an Iterator
-// For now, we store iterators directly since they're relatively small
+// decomposeIterator decomposes an Iterator based on its concrete type
 func decomposeIterator(c *MemoryCAS, iter interp.Iterator) (Hash, error) {
 	if iter == nil {
 		return 0, fmt.Errorf("cannot decompose nil Iterator")
 	}
 
-	// Store iterator directly
-	// Note: Iterator interface doesn't implement Hashable, so we need to handle this specially
-	// For now, we'll just return 0 and handle this in recompose
-	// TODO: Properly implement iterator serialization if needed
-	return 0, nil
+	switch it := iter.(type) {
+	case *interp.SliceIterator:
+		// Decompose each value in the slice
+		var valueHashes []Hash
+		for i, val := range it.Values {
+			h, err := decomposeValue(c, val)
+			if err != nil {
+				return 0, fmt.Errorf("decomposing slice value %d: %w", i, err)
+			}
+			valueHashes = append(valueHashes, h)
+		}
+
+		// Create SliceIteratorData
+		data := &SliceIteratorData{
+			ValueHashes: valueHashes,
+			Index:       it.Index,
+			VarCount:    it.VarCount,
+		}
+		return putDirect(c, data)
+
+	case *interp.DictIterator:
+		// Decompose the dict
+		dictHash, err := decomposeValue(c, it.Dict)
+		if err != nil {
+			return 0, fmt.Errorf("decomposing dict: %w", err)
+		}
+
+		// Create DictIteratorData
+		data := &DictIteratorData{
+			DictHash: dictHash,
+			Keys:     it.Keys,
+			Index:    it.Index,
+			VarCount: it.VarCount,
+		}
+		return putDirect(c, data)
+
+	default:
+		return 0, fmt.Errorf("unknown iterator type: %T", iter)
+	}
 }
 
 // decomposeValue decomposes a vm.Value

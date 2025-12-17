@@ -429,20 +429,21 @@ func (cc *compileContext) unary(e *syntax.UnaryExpr) error {
 func (cc *compileContext) callArg(arg syntax.Expr) error {
 	switch v := arg.(type) {
 	case *syntax.BinaryExpr:
-		if v.Op != syntax.EQ {
-			return fmt.Errorf("Only = is allowed in a function call")
-		}
-		if g, ok := v.X.(*syntax.Ident); ok {
-			err := cc.expr(v.Y)
-			if err != nil {
-				return err
+		if v.Op == syntax.EQ {
+			// Keyword argument: name=value
+			if g, ok := v.X.(*syntax.Ident); ok {
+				err := cc.expr(v.Y)
+				if err != nil {
+					return err
+				}
+				cc.emit(PUSH, StrValue(g.Name))
+				cc.emit(BUILD_ARG)
+			} else {
+				return fmt.Errorf("Only identifiers are allowed on the left-hand side of a function call argument")
 			}
-			cc.emit(PUSH, StrValue(g.Name))
-			cc.emit(BUILD_ARG)
-		} else {
-			return fmt.Errorf("Only identifiers are allowed on the left-hand side of a function call argument")
+			return nil
 		}
-		return nil
+		// For other binary expressions (like subtraction), fall through to regular expression handling
 	case *syntax.UnaryExpr:
 		if v.Op == syntax.STAR || v.Op == syntax.STARSTAR {
 			return fmt.Errorf("Splats are currently unsupported")

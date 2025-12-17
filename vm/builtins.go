@@ -108,7 +108,8 @@ func builtinOneof(args []Value) (Value, error) {
 	}
 
 	if len(arr) == 0 {
-		return nil, fmt.Errorf("oneof() argument must not be empty")
+		// Return None for empty arrays - non-deterministic "no choice"
+		return None, nil
 	}
 
 	// Return NonDetValue - will trigger immediate expansion in the model checker

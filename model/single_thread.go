@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/timewinder-dev/timewinder/interp"
 )
@@ -44,8 +43,7 @@ func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
 				// Track violation but continue
 				exec.Violations = append(exec.Violations, violation)
 			} else {
-				// Print formatted violation and stop
-				fmt.Fprintf(os.Stderr, "%s", FormatPropertyViolation(violation))
+				// Stop on initial state violation
 				return nil, err
 			}
 		}
@@ -59,25 +57,10 @@ func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
 	return st, nil
 }
 
-func (s *SingleThreadEngine) RunModel() error {
+func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 	stateCount := 0
 	depth := 0
 	w := s.Executor.DebugWriter
-
-	// Always print statistics on exit, even if there's an error
-	defer func() {
-		fmt.Fprintf(os.Stderr, "\n=== Model checking statistics ===\n")
-		fmt.Fprintf(os.Stderr, "Total state transitions attempted: %d\n", stateCount)
-		fmt.Fprintf(os.Stderr, "Unique states found: %d\n", len(s.Executor.VisitedStates))
-		fmt.Fprintf(os.Stderr, "Duplicate states pruned: %d\n", stateCount-len(s.Executor.VisitedStates))
-		fmt.Fprintf(os.Stderr, "Maximum depth: %d\n", depth)
-		fmt.Fprintf(os.Stderr, "Property violations found: %d\n", len(s.Executor.Violations))
-
-		// Print all violations if KeepGoing was enabled
-		if s.Executor.KeepGoing && len(s.Executor.Violations) > 0 {
-			fmt.Fprintf(os.Stderr, "%s", FormatAllViolations(s.Executor.Violations))
-		}
-	}()
 
 	for {
 		fmt.Fprintf(w, "\n=== Depth %d: Exploring %d states ===\n", depth, len(s.Queue))
@@ -93,7 +76,7 @@ func (s *SingleThreadEngine) RunModel() error {
 
 			st, choices, err := RunTrace(t, s.Executor.Program)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			// Handle non-deterministic choice (oneof) - immediate expansion
@@ -145,9 +128,19 @@ func (s *SingleThreadEngine) RunModel() error {
 					fmt.Fprintf(w, "⚠ Property violation detected (continuing due to --keep-going)\n")
 					fmt.Fprintf(w, "  %s\n", err.Error())
 				} else {
-					// Print formatted violation and stop
-					fmt.Fprintf(os.Stderr, "%s", FormatPropertyViolation(violation))
-					return err
+					// Stop on first violation - will be returned in ModelResult
+					result := &ModelResult{
+						Statistics: ModelStatistics{
+							TotalTransitions: stateCount,
+							UniqueStates:     len(s.Executor.VisitedStates),
+							DuplicateStates:  stateCount - len(s.Executor.VisitedStates),
+							MaxDepth:         depth,
+							ViolationCount:   1,
+						},
+						Violations: []PropertyViolation{violation},
+						Success:    false,
+					}
+					return result, nil
 				}
 			} else {
 				fmt.Fprintf(w, "✓ All properties satisfied\n")
@@ -155,7 +148,7 @@ func (s *SingleThreadEngine) RunModel() error {
 
 			next, err := BuildRunnable(t, st, s.Executor)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if next == nil {
@@ -174,10 +167,19 @@ func (s *SingleThreadEngine) RunModel() error {
 		depth++
 	}
 
-	// If KeepGoing was enabled and violations were found, return an error
-	if s.Executor.KeepGoing && len(s.Executor.Violations) > 0 {
-		return fmt.Errorf("Model checking completed with %d property violation(s)", len(s.Executor.Violations))
+	// Build result
+	result := &ModelResult{
+		Statistics: ModelStatistics{
+			TotalTransitions: stateCount,
+			UniqueStates:     len(s.Executor.VisitedStates),
+			DuplicateStates:  stateCount - len(s.Executor.VisitedStates),
+			MaxDepth:         depth,
+			ViolationCount:   len(s.Executor.Violations),
+		},
+		Violations: s.Executor.Violations,
+		Success:    len(s.Executor.Violations) == 0,
 	}
 
-	return nil
+	// Violations are reported in the result, not as errors
+	return result, nil
 }
