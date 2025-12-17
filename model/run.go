@@ -7,13 +7,13 @@ import (
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
-func RunTrace(t *Thunk, prog *vm.Program) (*interp.State, error) {
+func RunTrace(t *Thunk, prog *vm.Program) (*interp.State, []vm.Value, error) {
 	state := t.State.Clone()
-	_, err := interp.RunToPause(prog, state, t.ToRun)
+	choices, err := interp.RunToPause(prog, state, t.ToRun)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return state, nil
+	return state, choices, nil
 }
 
 func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, error) {

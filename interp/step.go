@@ -16,6 +16,7 @@ const (
 	CallStep
 	ErrorStep
 	YieldStep
+	NonDetStep // Non-deterministic choice encountered (from oneof builtin)
 )
 
 type Program interface {

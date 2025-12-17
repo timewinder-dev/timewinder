@@ -11,7 +11,10 @@ import (
 	"github.com/timewinder-dev/timewinder/model"
 )
 
-var debugFlag bool
+var (
+	debugFlag bool
+	keepGoing bool
+)
 
 var runCmd = &cobra.Command{
 	Use:   "run SPECFILE",
@@ -22,6 +25,7 @@ var runCmd = &cobra.Command{
 
 func init() {
 	runCmd.Flags().BoolVar(&debugFlag, "debug", false, "Enable debug output to see each execution step")
+	runCmd.Flags().BoolVar(&keepGoing, "keep-going", false, "Keep checking the model after reporting it's first error")
 }
 
 func runCommand(cmd *cobra.Command, args []string) {
@@ -51,6 +55,9 @@ func runCommand(cmd *cobra.Command, args []string) {
 	if debugFlag {
 		exec.Program.DebugPrint()
 		fmt.Fprintf(os.Stderr, "Initial state: %s\n\n", string(b))
+	}
+	if keepGoing {
+		exec.KeepGoing = true
 	}
 
 	fmt.Println("Running model checker...")

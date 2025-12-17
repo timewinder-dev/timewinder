@@ -92,3 +92,17 @@ func (a *ArrayValueRef) Serialize(w io.Writer) error {
 func (a *ArrayValueRef) Deserialize(r io.Reader) error {
 	return msgpack.UnmarshalRead(r, a)
 }
+
+// NonDetValueRef is used for vm.NonDetValue
+// Stores hash references for each choice
+type NonDetValueRef struct {
+	ChoiceHashes []Hash // Hash for each choice
+}
+
+func (n *NonDetValueRef) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, n)
+}
+
+func (n *NonDetValueRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, n)
+}

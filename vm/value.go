@@ -280,3 +280,48 @@ func (f FnPtrValue) Cmp(other Value) (int, bool) {
 func (FnPtrValue) Expand() ([]Value, error) {
 	return nil, nil
 }
+
+// BuiltinValue represents a builtin function (serializable - only stores name)
+type BuiltinValue struct {
+	Name string // Function name - impl looked up from registry at call time
+}
+
+func (BuiltinValue) isValue() {}
+func (BuiltinValue) AsBool() bool {
+	return true
+}
+func (b BuiltinValue) Clone() Value {
+	return b
+}
+func (b BuiltinValue) Cmp(other Value) (int, bool) {
+	return 0, false
+}
+func (BuiltinValue) Expand() ([]Value, error) {
+	return nil, nil
+}
+
+// NonDetValue represents a non-deterministic choice
+// Used internally during oneof() execution - never stored in variables
+type NonDetValue struct {
+	Choices []Value
+}
+
+func (NonDetValue) isValue() {}
+func (NonDetValue) AsBool() bool {
+	return true
+}
+func (n NonDetValue) Clone() Value {
+	choices := make([]Value, len(n.Choices))
+	for i, c := range n.Choices {
+		choices[i] = c.Clone()
+	}
+	return NonDetValue{Choices: choices}
+}
+func (NonDetValue) Cmp(other Value) (int, bool) {
+	return 0, false
+}
+
+// Expand returns all choices, triggering state branching
+func (n NonDetValue) Expand() ([]Value, error) {
+	return n.Choices, nil
+}

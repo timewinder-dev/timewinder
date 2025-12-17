@@ -1,6 +1,10 @@
 package interp
 
-import "github.com/timewinder-dev/timewinder/vm"
+import (
+	"fmt"
+
+	"github.com/timewinder-dev/timewinder/vm"
+)
 
 type State struct {
 	Globals     *StackFrame
@@ -13,6 +17,7 @@ type StackFrame struct {
 	PC            vm.ExecPtr
 	Variables     map[string]vm.Value
 	IteratorStack []*IteratorState
+	PendingNonDet *vm.NonDetValue // Set when a builtin returns NonDetValue
 }
 
 type StackFrames []*StackFrame
@@ -61,4 +66,20 @@ const (
 	Start Pause = iota
 	Finished
 	Yield
+	NonDet // Paused due to non-deterministic value (oneof)
 )
+
+func (p Pause) String() string {
+	switch p {
+	case Start:
+		return "Start"
+	case Finished:
+		return "Finished"
+	case Yield:
+		return "Yield"
+	case NonDet:
+		return "NonDet"
+	default:
+		return fmt.Sprintf("Unknown(%d)", p)
+	}
+}

@@ -8,6 +8,9 @@ import (
 )
 
 func (cc *compileContext) statement(s syntax.Stmt) error {
+	// Record source line for this statement
+	cc.setLine(s)
+
 	switch v := s.(type) {
 	case *syntax.AssignStmt:
 		return cc.assign(v.Op, v.LHS, v.RHS)
@@ -114,6 +117,9 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 }
 
 func (cc *compileContext) expr(e syntax.Expr) error {
+	// Record source line for this expression
+	cc.setLine(e)
+
 	switch v := e.(type) {
 	case *syntax.BinaryExpr:
 		// Handle short-circuit operators (AND, OR) specially

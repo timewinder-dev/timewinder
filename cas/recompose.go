@@ -163,6 +163,23 @@ func recomposeValue(c *MemoryCAS, hash Hash) (vm.Value, error) {
 		}
 		return result, nil
 
+	case "NonDetValueRef":
+		// Reconstruct from NonDetValueRef
+		ref, err := getDirect[*NonDetValueRef](c, hash)
+		if err != nil {
+			return nil, fmt.Errorf("retrieving NonDetValueRef: %w", err)
+		}
+
+		choices := make([]vm.Value, len(ref.ChoiceHashes))
+		for i, h := range ref.ChoiceHashes {
+			v, err := recomposeValue(c, h)
+			if err != nil {
+				return nil, fmt.Errorf("recomposing nondet choice %d: %w", i, err)
+			}
+			choices[i] = v
+		}
+		return vm.NonDetValue{Choices: choices}, nil
+
 	default:
 		// Not a Ref type, deserialize directly
 		return deserializeValue(typedEntry)
@@ -212,6 +229,14 @@ func deserializeValue(entry *TypedEntry) (vm.Value, error) {
 		return v, err
 	case "ArgValue":
 		var v vm.ArgValue
+		err := msgpack.UnmarshalRead(buf, &v)
+		return v, err
+	case "BuiltinValue":
+		var v vm.BuiltinValue
+		err := msgpack.UnmarshalRead(buf, &v)
+		return v, err
+	case "NonDetValue":
+		var v vm.NonDetValue
 		err := msgpack.UnmarshalRead(buf, &v)
 		return v, err
 	default:

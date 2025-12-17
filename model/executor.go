@@ -1,12 +1,27 @@
 package model
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 	"github.com/timewinder-dev/timewinder/vm"
 )
+
+// PropertyViolation represents a property that failed at a specific state
+type PropertyViolation struct {
+	PropertyName string
+	Message      string
+	StateHash    cas.Hash
+	Depth        int
+	StateNumber  int
+	Trace        []TraceStep
+	State        *interp.State // The actual state that violated the property
+	Program      *vm.Program   // The program being checked
+	ThreadID     int           // Which thread caused the violation (-1 for initial state)
+	ThreadName   string        // Name of the thread that caused the violation
+}
 
 // An Executor is the context and entrypoint for runnign a model
 type Executor struct {
@@ -19,6 +34,8 @@ type Executor struct {
 	DebugWriter   io.Writer
 	CAS           *cas.MemoryCAS
 	VisitedStates map[cas.Hash]bool
+	KeepGoing     bool
+	Violations    []PropertyViolation // Track all violations found
 }
 
 type Engine interface {
@@ -54,10 +71,17 @@ func (e *Executor) Initialize() error {
 
 func (e *Executor) initializeGlobal() error {
 	f := &interp.StackFrame{}
+
+	// Inject builtin functions into global scope BEFORE running global code
+	for name, builtin := range vm.AllBuiltins {
+		f.StoreVar(name, builtin)
+	}
+
 	_, err := interp.RunToEnd(e.Program, nil, f)
 	if err != nil {
 		return err
 	}
+
 	e.InitialState = &interp.State{
 		Globals: f,
 	}
@@ -104,4 +128,100 @@ func (e *Executor) initEngine() error {
 
 func (e *Executor) RunModel() error {
 	return e.Engine.RunModel()
+}
+
+// FormatPropertyViolation formats a single property violation for display
+func FormatPropertyViolation(v PropertyViolation) string {
+	var result string
+	result += fmt.Sprintf("\n╔═══════════════════════════════════════════════════════════════╗\n")
+	result += fmt.Sprintf("║ PROPERTY VIOLATION                                            ║\n")
+	result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
+	result += fmt.Sprintf("║ Property: %-52s║\n", v.PropertyName)
+
+	// Prominently display which thread caused the violation
+	if v.ThreadID >= 0 {
+		threadInfo := fmt.Sprintf("Thread %d (%s)", v.ThreadID, v.ThreadName)
+		result += fmt.Sprintf("║ Thread:   %-52s║\n", threadInfo)
+	} else {
+		result += fmt.Sprintf("║ Thread:   %-52s║\n", v.ThreadName)
+	}
+
+	result += fmt.Sprintf("║ Message:  %-52s║\n", v.Message)
+	result += fmt.Sprintf("║ State:    #%-50d║\n", v.StateNumber)
+	result += fmt.Sprintf("║ Depth:    %-52d║\n", v.Depth)
+	result += fmt.Sprintf("║ Hash:     0x%-49x║\n", v.StateHash)
+	result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
+	result += fmt.Sprintf("║ Execution Trace:                                              ║\n")
+
+	if len(v.Trace) == 0 {
+		result += fmt.Sprintf("║   (Initial state - no execution yet)                          ║\n")
+	} else {
+		for i, step := range v.Trace {
+			result += fmt.Sprintf("║   %2d. Thread %d → State 0x%08x%-24s║\n",
+				i+1, step.ThreadRan, step.StateHash, "")
+		}
+	}
+
+	// Add state information if available
+	if v.State != nil {
+		result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
+		result += fmt.Sprintf("║ State Information:                                            ║\n")
+		result += fmt.Sprintf("╠═══════════════════════════════════════════════════════════════╣\n")
+
+		// Get pretty-printed state
+		stateStr := v.State.PrettyPrint(v.Program)
+		// Format each line to fit in the box
+		lines := splitIntoLines(stateStr)
+		for _, line := range lines {
+			// Truncate if too long
+			if len(line) > 61 {
+				line = line[:58] + "..."
+			}
+			result += fmt.Sprintf("║ %-62s║\n", line)
+		}
+	}
+
+	result += fmt.Sprintf("╚═══════════════════════════════════════════════════════════════╝\n")
+	return result
+}
+
+// splitIntoLines splits a string into lines
+func splitIntoLines(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	lines := []string{}
+	currentLine := ""
+	for _, ch := range s {
+		if ch == '\n' {
+			lines = append(lines, currentLine)
+			currentLine = ""
+		} else {
+			currentLine += string(ch)
+		}
+	}
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+	return lines
+}
+
+// FormatAllViolations formats all property violations for display
+func FormatAllViolations(violations []PropertyViolation) string {
+	if len(violations) == 0 {
+		return ""
+	}
+
+	var result string
+	result += fmt.Sprintf("\n\n")
+	result += fmt.Sprintf("═══════════════════════════════════════════════════════════════\n")
+	result += fmt.Sprintf("  PROPERTY VIOLATIONS FOUND: %d\n", len(violations))
+	result += fmt.Sprintf("═══════════════════════════════════════════════════════════════\n")
+
+	for i, v := range violations {
+		result += fmt.Sprintf("\nViolation #%d:\n", i+1)
+		result += FormatPropertyViolation(v)
+	}
+
+	return result
 }

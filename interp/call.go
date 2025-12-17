@@ -49,11 +49,46 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 
 func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, error) {
 	if len(frame.Stack) < n+1 {
-		return nil, fmt.Errorf("Call stack is too short to buildCallFrame")
+		return nil, fmt.Errorf("Call stack is too short to buildCallFrame: need %d items, have %d", n+1, len(frame.Stack))
 	}
-	fnPtr, ok := frame.Pop().(vm.FnPtrValue)
+
+	// Check if calling a builtin function
+	fnVal := frame.Pop()
+	if builtinVal, ok := fnVal.(vm.BuiltinValue); ok {
+		// Look up builtin implementation from registry
+		impl, exists := vm.BuiltinRegistry[builtinVal.Name]
+		if !exists {
+			return nil, fmt.Errorf("unknown builtin function: %s", builtinVal.Name)
+		}
+
+		// Pop arguments
+		args := make([]vm.Value, n)
+		for i := n - 1; i >= 0; i-- {
+			argVal, ok := frame.Pop().(vm.ArgValue)
+			if !ok {
+				return nil, fmt.Errorf("Compiler error: stack contains non-call arguments")
+			}
+			args[i] = argVal.Value
+		}
+
+		// Call the builtin implementation
+		result, err := impl(args)
+		if err != nil {
+			return nil, err
+		}
+
+		// Always push result to stack and increment PC
+		// NonDetValue will be handled by RunToPause if in execution context
+		// or by Canonicalize if in initialization context
+		frame.Push(result)
+		frame.PC = frame.PC.Inc()
+		return nil, nil // No new call frame for builtins
+	}
+
+	// Regular function call - must be FnPtrValue
+	fnPtr, ok := fnVal.(vm.FnPtrValue)
 	if !ok {
-		return nil, fmt.Errorf("Compiler error: stack contains non-Fn-Ptr on call")
+		return nil, fmt.Errorf("Compiler error: stack contains non-callable value on call")
 	}
 	ptr := vm.ExecPtr(fnPtr)
 	args := make([]vm.ArgValue, n)

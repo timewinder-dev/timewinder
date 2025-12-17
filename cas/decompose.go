@@ -155,6 +155,23 @@ func decomposeValue(c *MemoryCAS, v vm.Value) (Hash, error) {
 		// ArgValue: store it directly
 		return putValueDirect(c, val)
 
+	case vm.BuiltinValue:
+		// BuiltinValue: store it directly (just a name string)
+		return putValueDirect(c, val)
+
+	case vm.NonDetValue:
+		// NonDetValue: decompose choices like an array
+		var choiceHashes []Hash
+		for i, choice := range val.Choices {
+			h, err := decomposeValue(c, choice)
+			if err != nil {
+				return 0, fmt.Errorf("decomposing nondet choice %d: %w", i, err)
+			}
+			choiceHashes = append(choiceHashes, h)
+		}
+		ref := &NonDetValueRef{ChoiceHashes: choiceHashes}
+		return putDirect(c, ref)
+
 	case vm.StructValue:
 		// Always use reference for structs to avoid msgpack deserialization issues
 		// with vm.Value interface types

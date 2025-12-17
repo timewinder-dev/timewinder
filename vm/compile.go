@@ -22,10 +22,13 @@ func (o Op) String() string {
 }
 
 type compileContext struct {
-	ops        []Op
-	topLevel   bool
-	subContext map[string]*compileContext
-	params     []FunctionParam
+	ops         []Op
+	topLevel    bool
+	subContext  map[string]*compileContext
+	params      []FunctionParam
+	lineMap     []int    // Maps op index to source line number
+	filename    string   // Source filename
+	currentLine int      // Current source line being compiled
 }
 
 func (cc *compileContext) DebugPrint() {
@@ -48,6 +51,8 @@ func (cc *compileContext) emit(op Opcode, val ...Value) {
 	} else {
 		panic("more than one arg to an op")
 	}
+	// Record the source line for this op
+	cc.lineMap = append(cc.lineMap, cc.currentLine)
 }
 
 func (cc *compileContext) newLabel() string {
@@ -56,6 +61,15 @@ func (cc *compileContext) newLabel() string {
 
 func (cc *compileContext) emitLabel(s string) {
 	cc.ops = append(cc.ops, Op{Code: LABEL, Arg: StrValue(s)})
+	cc.lineMap = append(cc.lineMap, cc.currentLine)
+}
+
+// setLine sets the current source line from a syntax node
+func (cc *compileContext) setLine(node syntax.Node) {
+	if node != nil {
+		start, _ := node.Span()
+		cc.currentLine = int(start.Line)
+	}
 }
 
 func newCompileContext() *compileContext {
@@ -84,7 +98,16 @@ func CompilePath(path string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Compile(synFile)
+	prog, err := Compile(synFile)
+	if err != nil {
+		return nil, err
+	}
+	// Set filename for main and all functions
+	prog.Main.Filename = path
+	for _, fn := range prog.Code {
+		fn.Filename = path
+	}
+	return prog, nil
 }
 
 func Compile(file *syntax.File) (*Program, error) {
@@ -139,13 +162,21 @@ func (cc *compileContext) intoFunction() (*Function, error) {
 	f := &Function{}
 	f.Params = cc.params
 	offsetmap := make(map[string]int)
-	for _, b := range cc.ops {
+	// Build bytecode and lineMap, skipping LABEL ops
+	for i, b := range cc.ops {
 		if b.Code == LABEL {
 			offsetmap[string(b.Arg.(StrValue))] = len(f.Bytecode)
 			continue
 		}
 		f.Bytecode = append(f.Bytecode, b)
+		// Copy line number for this op (accounting for skipped labels)
+		if i < len(cc.lineMap) {
+			f.LineMap = append(f.LineMap, cc.lineMap[i])
+		} else {
+			f.LineMap = append(f.LineMap, 0)
+		}
 	}
+	// Resolve label references to actual offsets
 	for i, b := range f.Bytecode {
 		switch b.Code {
 		case JMP:

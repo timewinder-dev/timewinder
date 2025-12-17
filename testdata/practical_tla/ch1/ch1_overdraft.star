@@ -2,7 +2,7 @@ people = ["alice", "bob"]
 acc = {"alice": 5, "bob": 5}
 sender = "alice"
 receiver = "bob"
-amount = 8
+amount = oneof(range(8))
 
 def no_overdrafts():
   # Simple check without loop (since iterators not implemented yet)

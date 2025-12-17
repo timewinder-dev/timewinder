@@ -44,9 +44,42 @@ func (p *Program) Resolve(name string) (ExecPtr, bool) {
 	return 0, false
 }
 
+// GetLineNumber returns the source line number for a given PC
+func (p *Program) GetLineNumber(ptr ExecPtr) int {
+	var f *Function
+	if ptr.CodeID() == 0 {
+		f = p.Main
+	} else if ptr.CodeID()-1 < len(p.Code) {
+		f = p.Code[ptr.CodeID()-1]
+	} else {
+		return 0
+	}
+
+	offset := ptr.Offset()
+	if offset >= 0 && offset < len(f.LineMap) {
+		return f.LineMap[offset]
+	}
+	return 0
+}
+
+// GetFilename returns the source filename for a given PC
+func (p *Program) GetFilename(ptr ExecPtr) string {
+	var f *Function
+	if ptr.CodeID() == 0 {
+		f = p.Main
+	} else if ptr.CodeID()-1 < len(p.Code) {
+		f = p.Code[ptr.CodeID()-1]
+	} else {
+		return ""
+	}
+	return f.Filename
+}
+
 type Function struct {
-	Bytecode []Op
-	Params   []FunctionParam
+	Bytecode  []Op
+	Params    []FunctionParam
+	LineMap   []int    // Maps PC offset to source line number
+	Filename  string   // Source filename for this function
 }
 
 func (f *Function) DebugPrint() {
@@ -79,6 +112,15 @@ func (ptr ExecPtr) Inc() ExecPtr {
 
 func (ptr ExecPtr) SetOffset(off int) ExecPtr {
 	return ExecPtr((ptr.CodeID() << 32) | int(0xFFFFFFFF&off))
+}
+
+func (ptr ExecPtr) String() string {
+	codeID := ptr.CodeID()
+	offset := ptr.Offset()
+	if codeID == 0 {
+		return fmt.Sprintf("main:%d", offset)
+	}
+	return fmt.Sprintf("fn%d:%d", codeID, offset)
 }
 
 func NewExecPtr(block int) ExecPtr {
