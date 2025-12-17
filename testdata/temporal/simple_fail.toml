@@ -1,0 +1,9 @@
+# Simple EventuallyAlways failure test
+
+[spec]
+
+[threads.main]
+entrypoint = "main()"
+
+[properties]
+IsTrue = {EventuallyAlways = "is_true"}

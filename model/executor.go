@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/timewinder-dev/timewinder/cas"
@@ -11,16 +12,17 @@ import (
 // PropertyViolation represents a property that failed at a specific state
 type PropertyViolation struct {
 	PropertyName string
+	PropertyType string         // Type of property: "Always", "EventuallyAlways", etc.
 	Message      string
 	StateHash    cas.Hash
 	Depth        int
 	StateNumber  int
 	Trace        []TraceStep
-	State        *interp.State // The actual state that violated the property
-	Program      *vm.Program   // The program being checked
-	ThreadID     int           // Which thread caused the violation (-1 for initial state)
-	ThreadName   string        // Name of the thread that caused the violation
-	ShowDetails  bool          // Whether to show detailed trace reconstruction
+	State        *interp.State  // The actual state that violated the property
+	Program      *vm.Program    // The program being checked
+	ThreadID     int            // Which thread caused the violation (-1 for initial state)
+	ThreadName   string         // Name of the thread that caused the violation
+	ShowDetails  bool           // Whether to show detailed trace reconstruction
 	CAS          *cas.MemoryCAS // For retrieving states during trace reconstruction
 }
 
@@ -42,18 +44,19 @@ type ModelResult struct {
 
 // An Executor is the context and entrypoint for runnign a model
 type Executor struct {
-	Program       *vm.Program
-	Properties    []Property
-	InitialState  *interp.State
-	Engine        Engine
-	Spec          *Spec
-	Threads       []string
-	DebugWriter   io.Writer
-	CAS           *cas.MemoryCAS
-	VisitedStates map[cas.Hash]bool
-	KeepGoing     bool
-	ShowDetails   bool                // Show detailed trace reconstruction
-	Violations    []PropertyViolation // Track all violations found
+	Program            *vm.Program
+	Properties         []Property
+	TemporalConstraints []TemporalConstraint // Temporal properties to check
+	InitialState       *interp.State
+	Engine             Engine
+	Spec               *Spec
+	Threads            []string
+	DebugWriter        io.Writer
+	CAS                *cas.MemoryCAS
+	VisitedStates      map[cas.Hash]bool
+	KeepGoing          bool
+	ShowDetails        bool                // Show detailed trace reconstruction
+	Violations         []PropertyViolation // Track all violations found
 }
 
 type Engine interface {
@@ -107,12 +110,27 @@ func (e *Executor) initializeGlobal() error {
 }
 
 func (e *Executor) initializeProperties() error {
-	// Initialize stack frames for each property
-	for _, prop := range e.Properties {
-		if ip, ok := prop.(*InterpProperty); ok {
-			// Get the property function name from the spec
-			propSpec := e.Spec.Properties[ip.Name]
-			callExpr := propSpec.Always + "()"
+	// Initialize stack frames for each property using TemporalConstraints
+	for _, constraint := range e.TemporalConstraints {
+		if ip, ok := constraint.Property.(*InterpProperty); ok {
+			// Get the property function name from the spec based on operator
+			propSpec := e.Spec.Properties[constraint.Name]
+			var funcName string
+
+			switch constraint.Operator {
+			case Always:
+				funcName = propSpec.Always
+			case EventuallyAlways:
+				funcName = propSpec.EventuallyAlways
+			case Eventually:
+				funcName = propSpec.Eventually
+			case AlwaysEventually:
+				funcName = propSpec.AlwaysEventually
+			default:
+				return fmt.Errorf("unknown temporal operator: %s", constraint.Operator)
+			}
+
+			callExpr := funcName + "()"
 
 			// Create a stack frame to call the property function
 			f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, callExpr)

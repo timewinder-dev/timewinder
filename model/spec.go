@@ -69,32 +69,43 @@ func (s *Spec) BuildExecutor() (*Executor, error) {
 		return nil, err
 	}
 	exec := &Executor{
-		Program: p,
-		Spec:    s,
+		Program:     p,
+		Spec:        s,
+		DebugWriter: io.Discard, // Default to silent; CLI can override
 	}
 
-	// Build properties
+	// Build properties with temporal constraints
 	for name, propSpec := range s.Properties {
-		// For now, we only support "Always" properties
-		if propSpec.Always == "" {
-			if propSpec.Eventually != "" {
-				return nil, fmt.Errorf("Eventually properties not yet supported")
-			} else if propSpec.AlwaysEventually != "" {
-				return nil, fmt.Errorf("AlwaysEventually properties not yet supported")
-			} else if propSpec.EventuallyAlways != "" {
-				return nil, fmt.Errorf("EventuallyAlways properties not yet supported")
-			} else {
-				return nil, fmt.Errorf("Property %s has no temporal operator", name)
-			}
+		// Determine the temporal operator
+		var operator TemporalOperator
+
+		if propSpec.Always != "" {
+			operator = Always
+		} else if propSpec.EventuallyAlways != "" {
+			operator = EventuallyAlways
+		} else if propSpec.Eventually != "" {
+			operator = Eventually
+		} else if propSpec.AlwaysEventually != "" {
+			operator = AlwaysEventually
+		} else {
+			return nil, fmt.Errorf("property %s has no operator specified", name)
 		}
 
-		// Create a property object
+		// Create the underlying Property (boolean function)
 		// The stack frame will be initialized later in initializeProperties()
 		prop := &InterpProperty{
 			Name:     name,
 			Executor: exec,
 		}
 		exec.Properties = append(exec.Properties, prop)
+
+		// Create TemporalConstraint that wraps the Property
+		constraint := TemporalConstraint{
+			Name:     name,
+			Operator: operator,
+			Property: prop,
+		}
+		exec.TemporalConstraints = append(exec.TemporalConstraints, constraint)
 	}
 
 	return exec, nil

@@ -19,6 +19,11 @@ func FormatPropertyViolation(v PropertyViolation) string {
 	result += color.Gray.Sprint("================================================================================") + "\n"
 	result += color.Bold.Sprintf("Property: ") + color.Yellow.Sprintf("%s\n", v.PropertyName)
 
+	// Show property type if specified and not "Always" (default)
+	if v.PropertyType != "" && v.PropertyType != "Always" {
+		result += color.Bold.Sprintf("Type:     ") + fmt.Sprintf("%s\n", v.PropertyType)
+	}
+
 	// Prominently display which thread caused the violation
 	if v.ThreadID >= 0 {
 		result += color.Bold.Sprintf("Thread:   ") + fmt.Sprintf("Thread %d (%s)\n", v.ThreadID, v.ThreadName)

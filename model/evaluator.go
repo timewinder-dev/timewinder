@@ -52,3 +52,35 @@ func (ip *InterpProperty) Check(state *interp.State) (PropertyResult, error) {
 		}, nil
 	}
 }
+
+// TemporalOperator represents the type of temporal logic operator
+type TemporalOperator int
+
+const (
+	Always TemporalOperator = iota
+	Eventually
+	EventuallyAlways
+	AlwaysEventually
+)
+
+func (op TemporalOperator) String() string {
+	switch op {
+	case Always:
+		return "Always"
+	case Eventually:
+		return "Eventually"
+	case EventuallyAlways:
+		return "EventuallyAlways"
+	case AlwaysEventually:
+		return "AlwaysEventually"
+	default:
+		return "Unknown"
+	}
+}
+
+// TemporalConstraint wraps a Property with temporal semantics
+type TemporalConstraint struct {
+	Name     string
+	Operator TemporalOperator // The temporal operator (Always, Eventually, etc.)
+	Property Property          // The underlying boolean property to evaluate
+}

@@ -1,0 +1,10 @@
+# Test EventuallyAlways - Success (Terminating)
+# Counter reaches target (3) and stays >= target
+
+[spec]
+
+[threads.main]
+entrypoint = "main()"
+
+[properties]
+ReachesTarget = {EventuallyAlways = "reaches_target"}

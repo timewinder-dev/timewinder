@@ -8,9 +8,11 @@ import (
 )
 
 type SingleThreadEngine struct {
-	Queue     []*Thunk
-	NextQueue []*Thunk
-	Executor  *Executor
+	Queue      []*Thunk
+	NextQueue  []*Thunk
+	Executor   *Executor
+	stateCount int // Total number of states explored
+	depth      int // Current BFS depth
 }
 
 func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
@@ -21,8 +23,11 @@ func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
 	st := &SingleThreadEngine{
 		Executor: exec,
 	}
+	// Only check "Always" properties at initial state (not EventuallyAlways, etc.)
+	alwaysProperties := FilterPropertiesByOperator(exec.TemporalConstraints, Always)
+
 	for _, s := range allStates {
-		err := CheckProperties(s, exec.Properties)
+		err := CheckProperties(s, alwaysProperties)
 		if err != nil {
 			violation := PropertyViolation{
 				PropertyName: "InitialState",
@@ -57,23 +62,96 @@ func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
 	return st, nil
 }
 
+// computeStatistics builds ModelStatistics from current engine state
+func (s *SingleThreadEngine) computeStatistics() ModelStatistics {
+	return ModelStatistics{
+		TotalTransitions: s.stateCount,
+		UniqueStates:     len(s.Executor.VisitedStates),
+		DuplicateStates:  s.stateCount - len(s.Executor.VisitedStates),
+		MaxDepth:         s.depth,
+		ViolationCount:   len(s.Executor.Violations),
+	}
+}
+
+// handleCyclicState handles a state that's been visited before (cycle detected)
+func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State) error {
+	fmt.Fprintf(s.Executor.DebugWriter, "Cycle detected (state already visited)\n")
+
+	// Check temporal constraints for this cyclic trace
+	if len(s.Executor.TemporalConstraints) > 0 {
+		return CheckTemporalConstraints(t, st, s.Executor, true) // isCycle=true
+	}
+	return nil
+}
+
+// handleTerminatingState handles a state with no runnable successors
+func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) error {
+	fmt.Fprintf(s.Executor.DebugWriter, "Terminating state (no runnable threads)\n")
+
+	// Check temporal constraints for terminating trace
+	if len(s.Executor.TemporalConstraints) > 0 {
+		return CheckTemporalConstraints(t, st, s.Executor, false) // isCycle=false
+	}
+	return nil
+}
+
+// handlePropertyViolation creates and records a property violation
+func (s *SingleThreadEngine) handlePropertyViolation(t *Thunk, st *interp.State, err error) (*ModelResult, error) {
+	// Get state hash for violation tracking
+	stateHash, hashErr := s.Executor.CAS.Put(st)
+	if hashErr != nil {
+		stateHash = 0 // Use 0 if hashing fails
+	}
+
+	violation := PropertyViolation{
+		PropertyName: "Property", // Will be updated by CheckProperties
+		Message:      err.Error(),
+		StateHash:    stateHash,
+		Depth:        s.depth,
+		StateNumber:  s.stateCount,
+		Trace:        t.Trace,
+		State:        st,
+		Program:      s.Executor.Program,
+		ThreadID:     t.ToRun,
+		ThreadName:   s.Executor.Threads[t.ToRun],
+		ShowDetails:  s.Executor.ShowDetails,
+		CAS:          s.Executor.CAS,
+	}
+
+	if s.Executor.KeepGoing {
+		// Track violation but continue exploring
+		s.Executor.Violations = append(s.Executor.Violations, violation)
+		fmt.Fprintf(s.Executor.DebugWriter, "⚠ Property violation detected (continuing due to --keep-going)\n")
+		fmt.Fprintf(s.Executor.DebugWriter, "  %s\n", err.Error())
+		return nil, nil
+	} else {
+		// Stop on first violation
+		return &ModelResult{
+			Statistics: s.computeStatistics(),
+			Violations: []PropertyViolation{violation},
+			Success:    false,
+		}, nil
+	}
+}
+
 func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
-	stateCount := 0
-	depth := 0
+	s.stateCount = 0
+	s.depth = 0
 	w := s.Executor.DebugWriter
 
 	for {
-		fmt.Fprintf(w, "\n=== Depth %d: Exploring %d states ===\n", depth, len(s.Queue))
+		fmt.Fprintf(w, "\n=== Depth %d: Exploring %d states ===\n", s.depth, len(s.Queue))
 
 		for len(s.Queue) != 0 {
 			t := s.Queue[0]
 			s.Queue = s.Queue[1:]
-			stateCount++
+			s.stateCount++
 
 			fmt.Fprintf(w, "\n--- State #%d: Running thread %d (%s) ---\n",
-				stateCount, t.ToRun, s.Executor.Threads[t.ToRun])
+				s.stateCount, t.ToRun, s.Executor.Threads[t.ToRun])
 			fmt.Fprintf(w, "Trace so far: %d steps\n", len(t.Trace))
 
+			// Execute thread
 			st, choices, err := RunTrace(t, s.Executor.Program)
 			if err != nil {
 				return nil, err
@@ -99,83 +177,72 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 			fmt.Fprintf(w, "After execution:\n%s\n", string(b))
 			fmt.Fprintf(w, "Pause reasons: %v\n", st.PauseReason)
 
-			err = CheckProperties(st, s.Executor.Properties)
+			// Check for cycles BEFORE generating successors
+			stateHash, err := s.Executor.CAS.Put(st)
 			if err != nil {
-				// Get state hash for violation tracking
-				stateHash, hashErr := s.Executor.CAS.Put(st)
-				if hashErr != nil {
-					stateHash = 0 // Use 0 if hashing fails
-				}
+				return nil, fmt.Errorf("hashing state: %w", err)
+			}
 
-				violation := PropertyViolation{
-					PropertyName: "Property", // Will be updated by CheckProperties
-					Message:      err.Error(),
-					StateHash:    stateHash,
-					Depth:        depth,
-					StateNumber:  stateCount,
-					Trace:        t.Trace,
-					State:        st,
-					Program:      s.Executor.Program,
-					ThreadID:     t.ToRun,
-					ThreadName:   s.Executor.Threads[t.ToRun],
-					ShowDetails:  s.Executor.ShowDetails,
-					CAS:          s.Executor.CAS,
-				}
-
-				if s.Executor.KeepGoing {
-					// Track violation but continue exploring
-					s.Executor.Violations = append(s.Executor.Violations, violation)
-					fmt.Fprintf(w, "⚠ Property violation detected (continuing due to --keep-going)\n")
-					fmt.Fprintf(w, "  %s\n", err.Error())
-				} else {
-					// Stop on first violation - will be returned in ModelResult
-					result := &ModelResult{
-						Statistics: ModelStatistics{
-							TotalTransitions: stateCount,
-							UniqueStates:     len(s.Executor.VisitedStates),
-							DuplicateStates:  stateCount - len(s.Executor.VisitedStates),
-							MaxDepth:         depth,
-							ViolationCount:   1,
-						},
-						Violations: []PropertyViolation{violation},
-						Success:    false,
+			if s.Executor.VisitedStates[stateHash] {
+				// Cycle detected - this is a terminal state
+				err := s.handleCyclicState(t, st)
+				if err != nil {
+					result, err := s.handlePropertyViolation(t, st, err)
+					if result != nil {
+						return result, err
 					}
-					return result, nil
+				}
+				continue // Don't generate successors for cyclic states
+			}
+
+			// Mark state as visited
+			s.Executor.VisitedStates[stateHash] = true
+
+			// Check invariant properties (Always) - not EventuallyAlways
+			alwaysProps := FilterPropertiesByOperator(s.Executor.TemporalConstraints, Always)
+			err = CheckProperties(st, alwaysProps)
+			if err != nil {
+				result, err := s.handlePropertyViolation(t, st, err)
+				if result != nil {
+					return result, err
 				}
 			} else {
 				fmt.Fprintf(w, "✓ All properties satisfied\n")
 			}
 
+			// Generate successors (BuildRunnable no longer checks cycles)
 			next, err := BuildRunnable(t, st, s.Executor)
 			if err != nil {
 				return nil, err
 			}
 
-			if next == nil {
-				fmt.Fprintf(w, "State already visited (cycle detected)\n")
+			// Check if this is a terminating state (no runnable successors)
+			if len(next) == 0 {
+				err := s.handleTerminatingState(t, st)
+				if err != nil {
+					result, err := s.handlePropertyViolation(t, st, err)
+					if result != nil {
+						return result, err
+					}
+				}
 			} else {
 				fmt.Fprintf(w, "Generated %d successor states\n", len(next))
 			}
 
 			s.NextQueue = append(s.NextQueue, next...)
 		}
+
 		if len(s.NextQueue) == 0 {
 			break
 		}
 		s.Queue = s.NextQueue
 		s.NextQueue = nil
-		depth++
+		s.depth++
 	}
 
-	// Build result
+	// Build result using helper function
 	result := &ModelResult{
-		Statistics: ModelStatistics{
-			TotalTransitions: stateCount,
-			UniqueStates:     len(s.Executor.VisitedStates),
-			DuplicateStates:  stateCount - len(s.Executor.VisitedStates),
-			MaxDepth:         depth,
-			ViolationCount:   len(s.Executor.Violations),
-		},
+		Statistics: s.computeStatistics(),
 		Violations: s.Executor.Violations,
 		Success:    len(s.Executor.Violations) == 0,
 	}
