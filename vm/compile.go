@@ -183,6 +183,8 @@ func (cc *compileContext) intoFunction() (*Function, error) {
 			fallthrough
 		case ITER_START:
 			fallthrough
+		case ITER_START_2:
+			fallthrough
 		case JFALSE:
 			if v, ok := b.Arg.(StrValue); ok {
 				b.Arg = IntValue(offsetmap[string(v)])

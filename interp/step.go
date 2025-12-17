@@ -3,6 +3,7 @@ package interp
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/timewinder-dev/timewinder/vm"
 )
@@ -30,6 +31,9 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	}
 	frame := stack[len(stack)-1]
 	inst, err := program.GetInstruction(frame.PC)
+	if err == nil {
+		fmt.Printf("DEBUG Step: PC=%v, opcode=%s, stack_len=%d\n", frame.PC, inst.Code, len(frame.Stack))
+	}
 	if err != nil {
 		if errors.Is(err, vm.ErrEndOfCode) {
 			return EndStep, 0, nil
@@ -226,6 +230,159 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		frame.Push(inst.Arg)
 		frame.PC = frame.PC.Inc()
 		return YieldStep, 0, nil
+	case vm.ITER_START:
+		// Pop the iterable from stack
+		iterable := frame.Pop()
+
+		// Pop the variable name
+		varName := frame.Pop()
+		varNameStr := string(varName.(vm.StrValue))
+
+		// Create appropriate iterator based on iterable type
+		var iter Iterator
+		switch val := iterable.(type) {
+		case vm.ArrayValue:
+			iter = &SliceIterator{
+				Values:   val,
+				Index:    -1,
+				VarCount: 1,
+			}
+		case vm.StructValue:
+			// Sort keys for deterministic iteration
+			keys := make([]string, 0, len(val))
+			for k := range val {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			iter = &DictIterator{
+				Dict:     val,
+				Keys:     keys,
+				Index:    -1,
+				VarCount: 1,
+			}
+		default:
+			return ErrorStep, 0, fmt.Errorf("Cannot iterate over %T", iterable)
+		}
+
+		// Get end label from instruction arg
+		endLabel := vm.ExecPtr(inst.Arg.(vm.IntValue))
+
+		// Create and push IteratorState
+		iterState := &IteratorState{
+			Start:    frame.PC.Inc(), // Resume point for loop body
+			End:      endLabel,        // Exit point
+			Iter:     iter,
+			VarNames: []string{varNameStr},
+		}
+		frame.IteratorStack = append(frame.IteratorStack, iterState)
+
+		// Advance to first element
+		if !iter.Next() {
+			// Empty iterable, jump to end immediately
+			frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
+			frame.PC = endLabel
+			return ContinueStep, 0, nil
+		}
+
+		// Set loop variable and continue to loop body (PC will auto-increment)
+		frame.StoreVar(varNameStr, iter.Var1())
+	case vm.ITER_START_2:
+		// Pop iterable (top of stack)
+		iterable := frame.Pop()
+
+		// Pop TWO variable names (second then first - they were pushed in order var1, var2)
+		varName2 := frame.Pop()  // Second variable
+		varName1 := frame.Pop()  // First variable
+		varName2Str := string(varName2.(vm.StrValue))
+		varName1Str := string(varName1.(vm.StrValue))
+
+		// Create iterator with VarCount=2
+		var iter Iterator
+		switch val := iterable.(type) {
+		case vm.ArrayValue:
+			iter = &SliceIterator{
+				Values:   val,
+				Index:    -1,
+				VarCount: 2, // Index and element
+			}
+		case vm.StructValue:
+			keys := make([]string, 0, len(val))
+			for k := range val {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			iter = &DictIterator{
+				Dict:     val,
+				Keys:     keys,
+				Index:    -1,
+				VarCount: 2, // Key and value
+			}
+		default:
+			return ErrorStep, 0, fmt.Errorf("Cannot iterate over %T", iterable)
+		}
+
+		// Same logic as ITER_START
+		endLabel := vm.ExecPtr(inst.Arg.(vm.IntValue))
+		iterState := &IteratorState{
+			Start:    frame.PC.Inc(),
+			End:      endLabel,
+			Iter:     iter,
+			VarNames: []string{varName1Str, varName2Str},
+		}
+		frame.IteratorStack = append(frame.IteratorStack, iterState)
+
+		if !iter.Next() {
+			frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
+			frame.PC = endLabel
+			return ContinueStep, 0, nil
+		}
+
+		// Set BOTH loop variables and continue to loop body (PC will auto-increment)
+		frame.StoreVar(varName1Str, iter.Var1())
+		frame.StoreVar(varName2Str, iter.Var2())
+	case vm.ITER_NEXT:
+		// Get current iterator from top of stack
+		if len(frame.IteratorStack) == 0 {
+			return ErrorStep, 0, fmt.Errorf("ITER_NEXT with empty iterator stack")
+		}
+
+		iterState := frame.IteratorStack[len(frame.IteratorStack)-1]
+		iter := iterState.Iter
+
+		fmt.Printf("DEBUG ITER_NEXT: calling Next(), current Index=%d\n", iter.(*DictIterator).Index)
+		// Try to advance to next element
+		if !iter.Next() {
+			// Iterator exhausted, pop it and exit loop
+			fmt.Printf("DEBUG ITER_NEXT: Iterator exhausted, jumping to End=%v\n", iterState.End)
+			frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
+			frame.PC = iterState.End
+			return ContinueStep, 0, nil
+		}
+
+		fmt.Printf("DEBUG ITER_NEXT: More elements, setting vars and jumping to Start=%v\n", iterState.Start)
+		// More elements, update loop variables and jump back to loop start
+		if len(iterState.VarNames) == 1 {
+			frame.StoreVar(iterState.VarNames[0], iter.Var1())
+		} else if len(iterState.VarNames) == 2 {
+			frame.StoreVar(iterState.VarNames[0], iter.Var1())
+			frame.StoreVar(iterState.VarNames[1], iter.Var2())
+		}
+		frame.PC = iterState.Start
+
+		return ContinueStep, 0, nil
+	case vm.ITER_END:
+		// Pop current iterator and jump to end
+		if len(frame.IteratorStack) == 0 {
+			return ErrorStep, 0, fmt.Errorf("ITER_END with empty iterator stack")
+		}
+
+		iterState := frame.IteratorStack[len(frame.IteratorStack)-1]
+		frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
+		frame.PC = iterState.End
+
+		return ContinueStep, 0, nil
 	default:
 		return ErrorStep, 0, fmt.Errorf("Unhandled step instruction %s", inst.Code)
 	}

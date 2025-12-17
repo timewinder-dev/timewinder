@@ -2,6 +2,7 @@ package interp
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/timewinder-dev/timewinder/vm"
 )
@@ -37,16 +38,18 @@ func (s StackFrames) CurrentStack() *StackFrame {
 }
 
 type IteratorState struct {
-	Start vm.ExecPtr
-	End   vm.ExecPtr
-	Iter  Iterator
+	Start    vm.ExecPtr
+	End      vm.ExecPtr
+	Iter     Iterator
+	VarNames []string // Loop variable names for updating in ITER_NEXT
 }
 
 func (its *IteratorState) Clone() *IteratorState {
 	return &IteratorState{
-		Start: its.Start,
-		End:   its.End,
-		Iter:  its.Iter.Clone(),
+		Start:    its.Start,
+		End:      its.End,
+		Iter:     its.Iter.Clone(),
+		VarNames: slices.Clone(its.VarNames),
 	}
 }
 
@@ -55,9 +58,6 @@ type Iterator interface {
 	Next() bool
 	Var1() vm.Value
 	Var2() vm.Value
-}
-
-type SliceIterator struct {
 }
 
 type Pause int
