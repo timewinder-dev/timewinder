@@ -103,6 +103,23 @@ func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, state
 func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) error {
 	fmt.Fprintf(s.Executor.DebugWriter, "Terminating state (no runnable threads)\n")
 
+	// Check for deadlock: no runnable threads but not all threads finished
+	if !s.Executor.NoDeadlocks {
+		allFinished := true
+		for i, reason := range st.PauseReason {
+			if reason != interp.Finished {
+				allFinished = false
+				fmt.Fprintf(s.Executor.DebugWriter, "  Thread %d (%s) is not finished: %v\n",
+					i, s.Executor.Threads[i], reason)
+			}
+		}
+
+		if !allFinished {
+			// Deadlock detected: threads are stuck waiting
+			return fmt.Errorf("Deadlock detected: no threads can make progress, but not all threads have finished")
+		}
+	}
+
 	// Check temporal constraints for terminating trace
 	if len(s.Executor.TemporalConstraints) > 0 {
 		return CheckTemporalConstraints(t, st, s.Executor, false) // isCycle=false
@@ -210,8 +227,10 @@ func (s *SingleThreadEngine) handlePropertyViolation(t *Thunk, st *interp.State,
 		return nil, nil
 	} else {
 		// Stop on first violation
+		stats := s.computeStatistics()
+		stats.ViolationCount = 1 // Fix count to reflect the actual violation being returned
 		return &ModelResult{
-			Statistics: s.computeStatistics(),
+			Statistics: stats,
 			Violations: []PropertyViolation{violation},
 			Success:    false,
 		}, nil

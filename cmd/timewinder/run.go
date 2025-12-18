@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	debugFlag   bool
-	keepGoing   bool
-	detailsFlag bool
+	debugFlag      bool
+	keepGoing      bool
+	detailsFlag    bool
+	noDeadlocksFlag bool
 )
 
 var runCmd = &cobra.Command{
@@ -29,6 +30,7 @@ func init() {
 	runCmd.Flags().BoolVar(&debugFlag, "debug", false, "Enable debug output to see each execution step")
 	runCmd.Flags().BoolVar(&keepGoing, "keep-going", false, "Keep checking the model after reporting it's first error")
 	runCmd.Flags().BoolVar(&detailsFlag, "details", false, "Show detailed trace reconstruction when property violations occur")
+	runCmd.Flags().BoolVar(&noDeadlocksFlag, "no-deadlocks", false, "Disable deadlock detection (allow states where no threads can progress)")
 }
 
 func runCommand(cmd *cobra.Command, args []string) {
@@ -64,6 +66,9 @@ func runCommand(cmd *cobra.Command, args []string) {
 	}
 	if detailsFlag {
 		exec.ShowDetails = true
+	}
+	if noDeadlocksFlag {
+		exec.NoDeadlocks = true
 	}
 
 	fmt.Fprintln(os.Stderr, color.Cyan.Sprint("Running model checker..."))

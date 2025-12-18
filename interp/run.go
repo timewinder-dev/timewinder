@@ -79,8 +79,9 @@ func RunToPause(prog *vm.Program, s *State, thread int) ([]vm.Value, error) {
 				}
 			}
 
-			// Normal function call
+			// Normal function call - increment caller's PC and push new frame
 			if f != nil {
+				currentFrame.PC = currentFrame.PC.Inc()
 				s.Stacks[thread].Append(f)
 			}
 		case ContinueStep:

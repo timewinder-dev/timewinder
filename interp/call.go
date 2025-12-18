@@ -88,7 +88,7 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 	// Regular function call - must be FnPtrValue
 	fnPtr, ok := fnVal.(vm.FnPtrValue)
 	if !ok {
-		return nil, fmt.Errorf("Compiler error: stack contains non-callable value on call")
+		return nil, fmt.Errorf("Compiler error: stack contains non-callable value on call (got %T: %v)", fnVal, fnVal)
 	}
 	ptr := vm.ExecPtr(fnPtr)
 	args := make([]vm.ArgValue, n)

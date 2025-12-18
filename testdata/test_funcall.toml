@@ -1,0 +1,4 @@
+[spec]
+
+[threads.test]
+entrypoint = "test()"

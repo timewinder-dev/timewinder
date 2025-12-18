@@ -57,6 +57,7 @@ type Executor struct {
 	KeepGoing          bool
 	ShowDetails        bool                // Show detailed trace reconstruction
 	Violations         []PropertyViolation // Track all violations found
+	NoDeadlocks        bool                // Disable deadlock detection
 }
 
 type Engine interface {

@@ -1,0 +1,7 @@
+[spec]
+
+[threads.inc1]
+entrypoint = "incrementer()"
+
+[threads.inc2]
+entrypoint = "incrementer()"

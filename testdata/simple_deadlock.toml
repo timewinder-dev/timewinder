@@ -1,0 +1,7 @@
+[spec]
+
+[threads.waiter_a]
+entrypoint = "waiter_a()"
+
+[threads.waiter_b]
+entrypoint = "waiter_b()"
