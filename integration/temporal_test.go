@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/model"
 )
 
@@ -13,7 +14,7 @@ func TestEventuallyAlways_SimpleSuccess(t *testing.T) {
 	spec, err := model.LoadSpecFromFile("../testdata/temporal/simple_success.toml")
 	require.NoError(t, err, "Failed to load spec")
 
-	exec, err := spec.BuildExecutor()
+	exec, err := spec.BuildExecutor(cas.NewMemoryCAS())
 	require.NoError(t, err, "Failed to build executor")
 
 	err = exec.Initialize()
@@ -32,7 +33,7 @@ func TestEventuallyAlways_SimpleFailure(t *testing.T) {
 	spec, err := model.LoadSpecFromFile("../testdata/temporal/simple_fail.toml")
 	require.NoError(t, err, "Failed to load spec")
 
-	exec, err := spec.BuildExecutor()
+	exec, err := spec.BuildExecutor(cas.NewMemoryCAS())
 	require.NoError(t, err, "Failed to build executor")
 
 	err = exec.Initialize()
@@ -56,7 +57,7 @@ func TestEventuallyAlways_CounterSuccess(t *testing.T) {
 	spec, err := model.LoadSpecFromFile("../testdata/temporal/eventually_always_success.toml")
 	require.NoError(t, err, "Failed to load spec")
 
-	exec, err := spec.BuildExecutor()
+	exec, err := spec.BuildExecutor(cas.NewMemoryCAS())
 	require.NoError(t, err, "Failed to build executor")
 
 	err = exec.Initialize()
@@ -77,7 +78,7 @@ func TestEventuallyAlways_CounterFailure(t *testing.T) {
 	spec, err := model.LoadSpecFromFile("../testdata/temporal/eventually_always_fail.toml")
 	require.NoError(t, err, "Failed to load spec")
 
-	exec, err := spec.BuildExecutor()
+	exec, err := spec.BuildExecutor(cas.NewMemoryCAS())
 	require.NoError(t, err, "Failed to build executor")
 
 	err = exec.Initialize()
@@ -96,7 +97,7 @@ func TestAlways_StillWorks(t *testing.T) {
 	spec, err := model.LoadSpecFromFile("../testdata/practical_tla/ch1/ch1_d.toml")
 	require.NoError(t, err, "Failed to load spec")
 
-	exec, err := spec.BuildExecutor()
+	exec, err := spec.BuildExecutor(cas.NewMemoryCAS())
 	require.NoError(t, err, "Failed to build executor")
 
 	err = exec.Initialize()
@@ -113,7 +114,7 @@ func TestAlways_DetectsViolation(t *testing.T) {
 	spec, err := model.LoadSpecFromFile("../testdata/practical_tla/ch1/ch1_c.toml")
 	require.NoError(t, err, "Failed to load spec")
 
-	exec, err := spec.BuildExecutor()
+	exec, err := spec.BuildExecutor(cas.NewMemoryCAS())
 	require.NoError(t, err, "Failed to build executor")
 
 	err = exec.Initialize()

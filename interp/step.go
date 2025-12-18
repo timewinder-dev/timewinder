@@ -289,15 +289,14 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		}
 	case vm.YIELD:
 		// Yield execution to allow other threads to run
-		// Push the step name as the "return value" of step()
-		// This documents which step caused the yield
-		frame.Push(inst.Arg)
+		// The step name (inst.Arg) should already be on the stack from compilation
+		// (step() compiles to PUSH <name>, YIELD <name>)
 		frame.PC = frame.PC.Inc()
 		return YieldStep, int(YieldNormal), nil
 	case vm.FAIR_YIELD:
 		// Weakly fair yield - similar to YIELD but marks as WeaklyFairYield
 		// This prevents stutter checking at this point
-		frame.Push(inst.Arg)
+		// The step name should already be on the stack from compilation
 		frame.PC = frame.PC.Inc()
 		return YieldStep, int(YieldWeaklyFair), nil
 	case vm.CONDITIONAL_YIELD:

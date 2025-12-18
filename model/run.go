@@ -205,7 +205,7 @@ func CheckTemporalConstraints(t *Thunk, finalState *interp.State, exec *Executor
 
 // checkEventuallyAlways implements the EventuallyAlways (◇□P) operator
 // Checks if there exists a point k where property becomes true and stays true forever
-func checkEventuallyAlways(constraint TemporalConstraint, stateHashes []interface{}, casStore *cas.MemoryCAS, isCycle bool) (PropertyResult, error) {
+func checkEventuallyAlways(constraint TemporalConstraint, stateHashes []interface{}, casStore cas.CAS, isCycle bool) (PropertyResult, error) {
 	n := len(stateHashes)
 	if n == 0 {
 		return PropertyResult{Success: false, Name: constraint.Name, Message: "Empty trace"}, nil

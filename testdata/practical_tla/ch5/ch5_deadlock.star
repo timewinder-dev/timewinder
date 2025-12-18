@@ -1,7 +1,7 @@
 # This is going to deadlock, and should hit the deadlock detector
 
 queue = []
-max_queue_size = 3
+max_queue_size = 14
 
 def bounded():
   return len(queue) <= max_queue_size

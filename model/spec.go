@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
@@ -63,7 +64,7 @@ func LoadSpecFromFile(path string) (*Spec, error) {
 	return s, nil
 }
 
-func (s *Spec) BuildExecutor() (*Executor, error) {
+func (s *Spec) BuildExecutor(casStore cas.CAS) (*Executor, error) {
 	p, err := vm.CompilePath(s.Spec.File)
 	if err != nil {
 		return nil, err
@@ -72,6 +73,7 @@ func (s *Spec) BuildExecutor() (*Executor, error) {
 		Program:     p,
 		Spec:        s,
 		DebugWriter: io.Discard, // Default to silent; CLI can override
+		CAS:         casStore,
 	}
 
 	// Build properties with temporal constraints

@@ -23,7 +23,7 @@ type PropertyViolation struct {
 	ThreadID     int            // Which thread caused the violation (-1 for initial state)
 	ThreadName   string         // Name of the thread that caused the violation
 	ShowDetails  bool           // Whether to show detailed trace reconstruction
-	CAS          *cas.MemoryCAS // For retrieving states during trace reconstruction
+	CAS          cas.CAS        // For retrieving states during trace reconstruction
 }
 
 // ModelStatistics holds statistics about the model checking run
@@ -52,12 +52,16 @@ type Executor struct {
 	Spec               *Spec
 	Threads            []string
 	DebugWriter        io.Writer
-	CAS                *cas.MemoryCAS
+	Reporter           Reporter            // Progress reporter
+	CAS                cas.CAS
 	VisitedStates      map[cas.Hash]bool
+	WeakStateHistory   map[cas.Hash][]int           // Track depths where weak states were seen
+	WeakStateSamples   map[cas.Hash]*interp.State   // Sample state for each weak hash
 	KeepGoing          bool
 	ShowDetails        bool                // Show detailed trace reconstruction
 	Violations         []PropertyViolation // Track all violations found
 	NoDeadlocks        bool                // Disable deadlock detection
+	MaxDepth           int                 // Maximum depth to explore (0 = unlimited)
 }
 
 type Engine interface {
@@ -71,8 +75,9 @@ func (e *Executor) Initialize() error {
 	}
 
 	// Initialize CAS and visited states tracking
-	e.CAS = cas.NewMemoryCAS()
 	e.VisitedStates = make(map[cas.Hash]bool)
+	e.WeakStateHistory = make(map[cas.Hash][]int)
+	e.WeakStateSamples = make(map[cas.Hash]*interp.State)
 
 	err = e.initializeProperties()
 	if err != nil {

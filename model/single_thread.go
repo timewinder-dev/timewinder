@@ -3,17 +3,21 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/gookit/color"
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 )
 
 type SingleThreadEngine struct {
-	Queue      []*Thunk
-	NextQueue  []*Thunk
-	Executor   *Executor
-	stateCount int // Total number of states explored
-	depth      int // Current BFS depth
+	Queue           []*Thunk
+	NextQueue       []*Thunk
+	Executor        *Executor
+	stateCount      int // Total number of states explored
+	depth           int // Current BFS depth
+	prunedThisDepth int // Number of states pruned at current depth
 }
 
 func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
@@ -72,6 +76,55 @@ func (s *SingleThreadEngine) computeStatistics() ModelStatistics {
 		MaxDepth:         s.depth,
 		ViolationCount:   len(s.Executor.Violations),
 	}
+}
+
+// formatDepthReport builds a colorized depth report string
+func formatDepthReport(depth, explored, pruned, remaining int, elapsed time.Duration) string {
+	var b strings.Builder
+
+	b.WriteString(color.Gray.Sprint("→"))
+	b.WriteString(" ")
+	b.WriteString(color.Cyan.Sprint("Depth"))
+	b.WriteString(" ")
+	b.WriteString(fmt.Sprint(depth))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("•"))
+	b.WriteString(" ")
+	b.WriteString(color.Yellow.Sprint("Explored"))
+	b.WriteString(" ")
+	b.WriteString(fmt.Sprint(explored))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("states"))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("•"))
+	b.WriteString(" ")
+	b.WriteString(color.Magenta.Sprint("Pruned"))
+	b.WriteString(" ")
+	b.WriteString(fmt.Sprint(pruned))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("states"))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("•"))
+	b.WriteString(" ")
+	b.WriteString(color.Green.Sprint("Remaining"))
+	b.WriteString(" ")
+	b.WriteString(fmt.Sprint(remaining))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("states"))
+	b.WriteString(" ")
+	b.WriteString(color.Gray.Sprint("•"))
+	b.WriteString(" ")
+	b.WriteString(color.Blue.Sprint("Time"))
+	b.WriteString(" ")
+	// Format time appropriately based on duration
+	if elapsed < time.Second {
+		b.WriteString(fmt.Sprintf("%dms", elapsed.Milliseconds()))
+	} else {
+		b.WriteString(fmt.Sprintf("%.2fs", elapsed.Seconds()))
+	}
+	b.WriteString("\n")
+
+	return b.String()
 }
 
 // handleCyclicState handles a state that's been visited before (cycle detected)
@@ -245,6 +298,13 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 	for {
 		fmt.Fprintf(w, "\n=== Depth %d: Exploring %d states ===\n", s.depth, len(s.Queue))
 
+		// Track timing for this depth
+		depthStart := time.Now()
+
+		// Reset pruned counter for this depth
+		s.prunedThisDepth = 0
+		queueSize := len(s.Queue)
+
 		for len(s.Queue) != 0 {
 			t := s.Queue[0]
 			s.Queue = s.Queue[1:]
@@ -288,6 +348,7 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 
 			if s.Executor.VisitedStates[stateHash] {
 				// State already visited - prune this branch
+				s.prunedThisDepth++
 				err := s.handleCyclicState(t, st, stateHash)
 				if err != nil {
 					result, err := s.handlePropertyViolation(t, st, err)
@@ -300,6 +361,16 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 
 			// Mark state as visited
 			s.Executor.VisitedStates[stateHash] = true
+
+			// Check for livelock (same weak state recurring)
+			isLivelock, err := DetectLivelock(s.Executor, st, s.depth)
+			if err != nil {
+				fmt.Fprintf(w, "Warning: livelock detection failed: %v\n", err)
+			}
+			if isLivelock && s.Executor.Reporter != nil {
+				s.Executor.Reporter.Printf("%s Livelock detected - cycling through equivalent states\n",
+					color.Yellow.Sprint("⚠"))
+			}
 
 			// Check invariant properties (Always) - not EventuallyAlways
 			alwaysProps := FilterPropertiesByOperator(s.Executor.TemporalConstraints, Always)
@@ -328,18 +399,30 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 
 			// Check if this is a terminating state (no runnable successors)
 			if len(next) == 0 {
+				fmt.Fprintf(w, "No successors generated (terminating state)\n")
 				err := s.handleTerminatingState(t, st)
 				if err != nil {
+					fmt.Fprintf(w, "  → Terminating state error: %v\n", err)
 					result, err := s.handlePropertyViolation(t, st, err)
 					if result != nil {
 						return result, err
 					}
+					// With --keep-going, we recorded the violation but should NOT generate successors
+					fmt.Fprintf(w, "  → Continuing after violation (no successors will be added)\n")
 				}
 			} else {
 				fmt.Fprintf(w, "Generated %d successor states\n", len(next))
 			}
 
+			fmt.Fprintf(w, "Adding %d states to NextQueue (queue will have %d total)\n", len(next), len(s.NextQueue)+len(next))
 			s.NextQueue = append(s.NextQueue, next...)
+		}
+
+		// Report progress after processing this depth
+		if s.Executor.Reporter != nil {
+			elapsed := time.Since(depthStart)
+			report := formatDepthReport(s.depth, queueSize, s.prunedThisDepth, len(s.NextQueue), elapsed)
+			s.Executor.Reporter.Printf("%s", report)
 		}
 
 		if len(s.NextQueue) == 0 {
@@ -348,6 +431,17 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 		s.Queue = s.NextQueue
 		s.NextQueue = nil
 		s.depth++
+
+		// Check if we've reached max depth
+		if s.Executor.MaxDepth > 0 && s.depth >= s.Executor.MaxDepth {
+			fmt.Fprintf(s.Executor.DebugWriter, "\n⚠ Reached maximum depth %d, stopping exploration\n", s.Executor.MaxDepth)
+			if s.Executor.Reporter != nil {
+				s.Executor.Reporter.Printf("%s Reached maximum depth %d, stopping exploration\n",
+					color.Yellow.Sprint("⚠"),
+					s.Executor.MaxDepth)
+			}
+			break
+		}
 	}
 
 	// Build result using helper function

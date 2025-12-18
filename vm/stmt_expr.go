@@ -45,10 +45,8 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		if err != nil {
 			return err
 		}
-		// Only POP if it's not a special call that handles its own stack
-		if !isSpecialWithoutStackResult(v.X) {
-			cc.emit(POP)
-		}
+		// All expressions leave a value on the stack, so always POP it
+		cc.emit(POP)
 	case *syntax.ForStmt:
 		idents := 0
 		switch vars := v.Vars.(type) {

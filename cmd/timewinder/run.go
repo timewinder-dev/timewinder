@@ -5,18 +5,25 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"runtime/pprof"
 
 	"github.com/gookit/color"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/model"
 )
 
 var (
-	debugFlag      bool
-	keepGoing      bool
-	detailsFlag    bool
+	debugFlag       bool
+	keepGoing       bool
+	detailsFlag     bool
 	noDeadlocksFlag bool
+	maxDepth        int
+	cpuProfile      string
+	memProfile      string
+	lruSize         int
 )
 
 var runCmd = &cobra.Command{
@@ -31,15 +38,59 @@ func init() {
 	runCmd.Flags().BoolVar(&keepGoing, "keep-going", false, "Keep checking the model after reporting it's first error")
 	runCmd.Flags().BoolVar(&detailsFlag, "details", false, "Show detailed trace reconstruction when property violations occur")
 	runCmd.Flags().BoolVar(&noDeadlocksFlag, "no-deadlocks", false, "Disable deadlock detection (allow states where no threads can progress)")
+	runCmd.Flags().IntVar(&maxDepth, "max-depth", 0, "Maximum depth to explore (0 = unlimited)")
+	runCmd.Flags().StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile to specified file")
+	runCmd.Flags().StringVar(&memProfile, "memprofile", "", "Write memory profile to specified file")
+	runCmd.Flags().IntVar(&lruSize, "lru-size", 10000, "LRU cache size for CAS (0 = disabled)")
 }
 
 func runCommand(cmd *cobra.Command, args []string) {
+	// Set up CPU profiling if requested
+	if cpuProfile != "" {
+		f, err := os.Create(cpuProfile)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Could not create CPU profile file")
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal().Err(err).Msg("Could not start CPU profile")
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	// Set up memory profiling if requested (written at end of function)
+	if memProfile != "" {
+		defer func() {
+			f, err := os.Create(memProfile)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Could not create memory profile file")
+			}
+			defer f.Close()
+			runtime.GC() // Get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				log.Fatal().Err(err).Msg("Could not write memory profile")
+			}
+		}()
+	}
+
 	filename := args[0]
 	spec, err := model.LoadSpecFromFile(filename)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Couldn't load specfile")
 	}
-	exec, err := spec.BuildExecutor()
+
+	// Create CAS with optional LRU caching
+	memoryCAS := cas.NewMemoryCAS()
+	var casStore cas.CAS
+	if lruSize == 0 {
+		// LRU disabled
+		casStore = memoryCAS
+	} else {
+		// LRU enabled with specified size
+		casStore = cas.NewLRUCache(memoryCAS, lruSize)
+	}
+
+	exec, err := spec.BuildExecutor(casStore)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Couldn't build executor for specfile")
 	}
@@ -48,6 +99,10 @@ func runCommand(cmd *cobra.Command, args []string) {
 	} else {
 		exec.DebugWriter = io.Discard
 	}
+
+	// Set up progress reporter (always enabled for user visibility)
+	exec.Reporter = &model.ColorReporter{Writer: os.Stderr}
+
 	err = exec.Initialize()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Couldn't init executor engine")
@@ -69,6 +124,9 @@ func runCommand(cmd *cobra.Command, args []string) {
 	}
 	if noDeadlocksFlag {
 		exec.NoDeadlocks = true
+	}
+	if maxDepth > 0 {
+		exec.MaxDepth = maxDepth
 	}
 
 	fmt.Fprintln(os.Stderr, color.Cyan.Sprint("Running model checker..."))

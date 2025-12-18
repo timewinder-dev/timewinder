@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/shamaton/msgpack/v2"
 	"github.com/timewinder-dev/timewinder/vm"
@@ -169,11 +170,16 @@ func FormatValue(v vm.Value) string {
 
 // PrettyPrint returns a formatted string representation of the State
 func (s *State) PrettyPrint(prog *vm.Program) string {
-	var result string
+	var b strings.Builder
+	s.PrettyPrintTo(&b, prog)
+	return b.String()
+}
 
+// PrettyPrintTo writes a formatted representation of the State directly to w
+func (s *State) PrettyPrintTo(w io.Writer, prog *vm.Program) {
 	// Print global variables (excluding builtins and functions)
 	if s.Globals != nil && len(s.Globals.Variables) > 0 {
-		result += "Global Variables:\n"
+		fmt.Fprint(w, "Global Variables:\n")
 
 		// Sort keys for consistent output
 		keys := make([]string, 0, len(s.Globals.Variables))
@@ -191,21 +197,21 @@ func (s *State) PrettyPrint(prog *vm.Program) string {
 		sort.Strings(keys)
 
 		if len(keys) == 0 {
-			result += "  (none)\n"
+			fmt.Fprint(w, "  (none)\n")
 		} else {
 			for _, k := range keys {
 				v := s.Globals.Variables[k]
-				result += fmt.Sprintf("  %s = %s\n", k, FormatValue(v))
+				fmt.Fprintf(w, "  %s = %s\n", k, FormatValue(v))
 			}
 		}
 	}
 
 	// Print per-thread state
 	if len(s.Stacks) > 0 {
-		result += "\nThread States:\n"
+		fmt.Fprint(w, "\nThread States:\n")
 		for i, stack := range s.Stacks {
 			pauseReason := s.PauseReason[i]
-			result += fmt.Sprintf("  Thread %d [%s]:\n", i, pauseReason)
+			fmt.Fprintf(w, "  Thread %d [%s]:\n", i, pauseReason)
 
 			// Show pause location and context
 			if len(stack) > 0 {
@@ -218,21 +224,21 @@ func (s *State) PrettyPrint(prog *vm.Program) string {
 					filename := prog.GetFilename(pc)
 					if lineNum > 0 && filename != "" {
 						basename := filepath.Base(filename)
-						result += fmt.Sprintf("    Location: %s:%d\n", basename, lineNum)
+						fmt.Fprintf(w, "    Location: %s:%d\n", basename, lineNum)
 					} else if lineNum > 0 {
-						result += fmt.Sprintf("    Location: line %d\n", lineNum)
+						fmt.Fprintf(w, "    Location: line %d\n", lineNum)
 					} else {
-						result += fmt.Sprintf("    Location: %s\n", pc)
+						fmt.Fprintf(w, "    Location: %s\n", pc)
 					}
 				} else {
-					result += fmt.Sprintf("    Location: %s\n", pc)
+					fmt.Fprintf(w, "    Location: %s\n", pc)
 				}
 
 				// If yielded, show the step name from top of stack
 				if pauseReason == Yield && len(currentFrame.Stack) > 0 {
 					topValue := currentFrame.Stack[len(currentFrame.Stack)-1]
 					if stepName, ok := topValue.(vm.StrValue); ok {
-						result += fmt.Sprintf("    Step: %s\n", stepName)
+						fmt.Fprintf(w, "    Step: %s\n", stepName)
 					}
 				}
 			}
@@ -243,9 +249,9 @@ func (s *State) PrettyPrint(prog *vm.Program) string {
 				if len(frame.Variables) > 0 {
 					hasLocalVars = true
 					if frameIdx > 0 {
-						result += fmt.Sprintf("    Frame %d:\n", frameIdx)
+						fmt.Fprintf(w, "    Frame %d:\n", frameIdx)
 					} else {
-						result += "    Local variables:\n"
+						fmt.Fprint(w, "    Local variables:\n")
 					}
 
 					// Sort keys
@@ -258,19 +264,17 @@ func (s *State) PrettyPrint(prog *vm.Program) string {
 					for _, k := range keys {
 						v := frame.Variables[k]
 						if frameIdx > 0 {
-							result += fmt.Sprintf("      %s = %s\n", k, FormatValue(v))
+							fmt.Fprintf(w, "      %s = %s\n", k, FormatValue(v))
 						} else {
-							result += fmt.Sprintf("      %s = %s\n", k, FormatValue(v))
+							fmt.Fprintf(w, "      %s = %s\n", k, FormatValue(v))
 						}
 					}
 				}
 			}
 
 			if !hasLocalVars {
-				result += "    (no local variables)\n"
+				fmt.Fprint(w, "    (no local variables)\n")
 			}
 		}
 	}
-
-	return result
 }

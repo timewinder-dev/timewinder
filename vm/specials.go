@@ -23,33 +23,6 @@ var allSpecials = []Special{
 	FUntil,
 }
 
-// Specials that don't leave values on the stack (don't need POP after them)
-var specialsWithoutStackResult = []Special{
-	Step,
-	FStep,
-	Until,
-	FUntil,
-}
-
-// isSpecialWithoutStackResult checks if a call expression is a special function
-// that doesn't leave a value on the stack
-func isSpecialWithoutStackResult(expr syntax.Expr) bool {
-	callExpr, ok := expr.(*syntax.CallExpr)
-	if !ok {
-		return false
-	}
-	ident, ok := callExpr.Fn.(*syntax.Ident)
-	if !ok {
-		return false
-	}
-	specialName := Special(ident.Name)
-	for _, s := range specialsWithoutStackResult {
-		if specialName == s {
-			return true
-		}
-	}
-	return false
-}
 
 func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
 	if _, ok := call.Fn.(*syntax.Ident); !ok {
@@ -72,6 +45,9 @@ func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
 		if v.Token != syntax.STRING {
 			return true, fmt.Errorf("Argument to %s is not a literal string label", fn.Name)
 		}
+		// Push the step name to stack first (for ExprStmt POP to consume)
+		cc.emit(PUSH, StrValue(v.Value.(string)))
+		// Then yield (arg is for tracing/debugging)
 		cc.emit(YIELD, StrValue(v.Value.(string)))
 	case FStep:
 		if len(call.Args) > 1 {
@@ -85,6 +61,9 @@ func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
 		if v.Token != syntax.STRING {
 			return true, fmt.Errorf("Argument to %s is not a literal string label", fn.Name)
 		}
+		// Push the step name to stack first (for ExprStmt POP to consume)
+		cc.emit(PUSH, StrValue(v.Value.(string)))
+		// Then yield with weak fairness (arg is for tracing/debugging)
 		cc.emit(FAIR_YIELD, StrValue(v.Value.(string)))
 	case Until:
 		return cc.compileUntil(call, false)
@@ -122,7 +101,9 @@ func (cc *compileContext) compileUntil(call *syntax.CallExpr, isWeaklyFair bool)
 	} else {
 		cc.emit(CONDITIONAL_YIELD, StrValue(condStartLabel))
 	}
-	// No POP needed - conditional yields already consume the condition value
+
+	// Push None to leave a value on stack (for ExprStmt POP to consume)
+	cc.emit(PUSH, None)
 
 	return true, nil
 }

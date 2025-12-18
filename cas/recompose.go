@@ -10,7 +10,7 @@ import (
 )
 
 // recomposeState reconstructs a State from a StateRef stored in the CAS
-func recomposeState(c *MemoryCAS, hash Hash) (*interp.State, error) {
+func recomposeState(c directStore, hash Hash) (*interp.State, error) {
 	// Retrieve the StateRef
 	ref, err := getDirect[*StateRef](c, hash)
 	if err != nil {
@@ -46,7 +46,7 @@ func recomposeState(c *MemoryCAS, hash Hash) (*interp.State, error) {
 }
 
 // recomposeStackFrame reconstructs a StackFrame from a StackFrameRef
-func recomposeStackFrame(c *MemoryCAS, hash Hash) (*interp.StackFrame, error) {
+func recomposeStackFrame(c directStore, hash Hash) (*interp.StackFrame, error) {
 	// Retrieve the StackFrameRef
 	ref, err := getDirect[*StackFrameRef](c, hash)
 	if err != nil {
@@ -90,7 +90,7 @@ func recomposeStackFrame(c *MemoryCAS, hash Hash) (*interp.StackFrame, error) {
 }
 
 // recomposeIteratorState reconstructs an IteratorState from an IteratorStateRef
-func recomposeIteratorState(c *MemoryCAS, hash Hash) (*interp.IteratorState, error) {
+func recomposeIteratorState(c directStore, hash Hash) (*interp.IteratorState, error) {
 	if hash == 0 {
 		return nil, fmt.Errorf("cannot recompose from zero hash")
 	}
@@ -117,7 +117,7 @@ func recomposeIteratorState(c *MemoryCAS, hash Hash) (*interp.IteratorState, err
 }
 
 // recomposeIterator reconstructs an Iterator from CAS
-func recomposeIterator(c *MemoryCAS, hash Hash) (interp.Iterator, error) {
+func recomposeIterator(c directStore, hash Hash) (interp.Iterator, error) {
 	if hash == 0 {
 		return nil, fmt.Errorf("cannot recompose from zero hash")
 	}
@@ -167,17 +167,20 @@ func recomposeIterator(c *MemoryCAS, hash Hash) (interp.Iterator, error) {
 
 // recomposeValue reconstructs a vm.Value from the CAS
 // Handles both inline values and Ref types
-func recomposeValue(c *MemoryCAS, hash Hash) (vm.Value, error) {
+func recomposeValue(c directStore, hash Hash) (vm.Value, error) {
 	// Retrieve the raw bytes
-	entryBytes, ok := c.data[hash]
-	if !ok {
+	has, entryBytes, err := c.getValue(hash)
+	if err != nil {
+		return nil, fmt.Errorf("getValue failed: %w", err)
+	}
+	if !has {
 		return nil, fmt.Errorf("hash not found in CAS: %d", hash)
 	}
 
 	// Deserialize TypedEntry from bytes
 	typedEntry := &TypedEntry{}
 	entryBuf := bytes.NewReader(entryBytes)
-	err := typedEntry.Deserialize(entryBuf)
+	err = typedEntry.Deserialize(entryBuf)
 	if err != nil {
 		return nil, fmt.Errorf("deserializing TypedEntry: %w", err)
 	}
@@ -301,19 +304,22 @@ func deserializeValue(entry *TypedEntry) (vm.Value, error) {
 }
 
 // getDirect retrieves an item from the CAS and deserializes it to type T
-func getDirect[T Hashable](c *MemoryCAS, hash Hash) (T, error) {
+func getDirect[T Hashable](c directStore, hash Hash) (T, error) {
 	var zero T
 
 	// Retrieve bytes from CAS
-	entryBytes, ok := c.data[hash]
-	if !ok {
+	has, entryBytes, err := c.getValue(hash)
+	if err != nil {
+		return zero, fmt.Errorf("getValue failed: %w", err)
+	}
+	if !has {
 		return zero, fmt.Errorf("hash not found in CAS: %d", hash)
 	}
 
 	// Deserialize TypedEntry from bytes
 	typedEntry := &TypedEntry{}
 	entryBuf := bytes.NewReader(entryBytes)
-	err := typedEntry.Deserialize(entryBuf)
+	err = typedEntry.Deserialize(entryBuf)
 	if err != nil {
 		return zero, fmt.Errorf("deserializing TypedEntry: %w", err)
 	}

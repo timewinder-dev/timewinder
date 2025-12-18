@@ -51,7 +51,7 @@ func Retrieve[T Hashable](c CAS, hash Hash) (T, error) {
 	targetType := reflect.TypeOf(zeroT)
 	if targetType == reflect.TypeOf((*interp.State)(nil)) {
 		// Recompose State from StateRef
-		state, err := recomposeState(c.(*MemoryCAS), hash)
+		state, err := recomposeState(v, hash)
 		if err != nil {
 			return t, fmt.Errorf("recomposing State: %w", err)
 		}
