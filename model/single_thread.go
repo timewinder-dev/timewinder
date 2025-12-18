@@ -110,6 +110,68 @@ func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) 
 	return nil
 }
 
+// handleStutterCheck checks temporal properties as if the process terminates at this state
+// This is skipped for WeaklyFairYield states (weak fairness assumption)
+func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*ModelResult, error) {
+	w := s.Executor.DebugWriter
+	threadPauseReason := st.PauseReason[t.ToRun]
+
+	// Only check stutter for normal Yield (not WeaklyFairYield)
+	if threadPauseReason != interp.Yield || len(s.Executor.TemporalConstraints) == 0 {
+		return nil, nil
+	}
+
+	fmt.Fprintf(w, "Checking stutter for thread %d (%s) - as if process terminates here...\n",
+		t.ToRun, s.Executor.Threads[t.ToRun])
+
+	// Clone the state and mark the thread as Stuttering for clarity in output
+	stutterState := st.Clone()
+	stutterState.PauseReason[t.ToRun] = interp.Stuttering
+
+	err := CheckTemporalConstraints(t, stutterState, s.Executor, false) // isCycle=false for stutter
+	if err != nil {
+		fmt.Fprintf(w, "⚠ Stutter check failed for thread %d: %s\n", t.ToRun, err.Error())
+
+		// Get state hash for violation tracking (use stutter state)
+		stateHash, hashErr := s.Executor.CAS.Put(stutterState)
+		if hashErr != nil {
+			stateHash = 0
+		}
+
+		violation := PropertyViolation{
+			PropertyName: "Stutter Check",
+			Message: fmt.Sprintf("Stutter check failed at thread %d (%s): %s",
+				t.ToRun, s.Executor.Threads[t.ToRun], err.Error()),
+			StateHash:   stateHash,
+			Depth:       s.depth,
+			StateNumber: s.stateCount,
+			Trace:       t.Trace,
+			State:       stutterState, // Use stutter state to show [Stuttering] in output
+			Program:     s.Executor.Program,
+			ThreadID:    t.ToRun,
+			ThreadName:  s.Executor.Threads[t.ToRun],
+			ShowDetails: s.Executor.ShowDetails,
+			CAS:         s.Executor.CAS,
+		}
+
+		// Always add violation to the list for statistics
+		s.Executor.Violations = append(s.Executor.Violations, violation)
+
+		if s.Executor.KeepGoing {
+			return nil, nil
+		} else {
+			return &ModelResult{
+				Statistics: s.computeStatistics(),
+				Violations: s.Executor.Violations, // Use the full violations list
+				Success:    false,
+			}, nil
+		}
+	}
+
+	fmt.Fprintf(w, "✓ Stutter check passed for thread %d\n", t.ToRun)
+	return nil, nil
+}
+
 // handlePropertyViolation creates and records a property violation
 func (s *SingleThreadEngine) handlePropertyViolation(t *Thunk, st *interp.State, err error) (*ModelResult, error) {
 	// Get state hash for violation tracking
@@ -223,6 +285,13 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 				}
 			} else {
 				fmt.Fprintf(w, "✓ All properties satisfied\n")
+			}
+
+			// Check stutter: temporal properties as if process terminates here
+			// Skipped for WeaklyFairYield (weak fairness assumption)
+			result, err := s.handleStutterCheck(t, st)
+			if result != nil || err != nil {
+				return result, err
 			}
 
 			// Generate successors (BuildRunnable no longer checks cycles)

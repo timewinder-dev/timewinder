@@ -1,0 +1,10 @@
+[spec]
+
+[threads.reader]
+entrypoint = "reader()"
+
+[threads.writer]
+entrypoint = "writer()"
+
+[properties]
+BoundedQueue = {Always = "bounded"}

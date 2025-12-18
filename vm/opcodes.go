@@ -41,7 +41,8 @@ const (
 	CALL // A B C Fn | arg: 3, calls Fn with the top three args |
 
 	// Here begin the opcodes that are unique to a VM that is trying to run through a search. They should add a value to the stack, but are hints to the execution.
-	YIELD // Arg: step name. Pauses execution and maybe something else runs. Breaks atomicity of actions in a function.
+	YIELD      // Arg: step name. Pauses execution and maybe something else runs. Breaks atomicity of actions in a function.
+	FAIR_YIELD // Arg: step name. Weakly fair yield (from fstep) - pauses but no stutter checking.
 
 	LABEL
 	OpcodeMax
@@ -110,6 +111,8 @@ func (o Opcode) String() string {
 		return "SETATTR"
 	case YIELD:
 		return "YIELD"
+	case FAIR_YIELD:
+		return "FAIR_YIELD"
 		// Complete all uncovered opcodes
 	}
 	panic("Unnamed opcode")

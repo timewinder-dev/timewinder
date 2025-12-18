@@ -89,7 +89,12 @@ func RunToPause(prog *vm.Program, s *State, thread int) ([]vm.Value, error) {
 			s.PauseReason[thread] = Finished
 			return nil, nil
 		case YieldStep:
-			s.PauseReason[thread] = Yield
+			// Check yield type to set appropriate PauseReason
+			if YieldType(n) == YieldWeaklyFair {
+				s.PauseReason[thread] = WeaklyFairYield
+			} else {
+				s.PauseReason[thread] = Yield
+			}
 			return nil, nil
 		default:
 			panic("unhandled intermediate step")

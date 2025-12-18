@@ -20,6 +20,14 @@ const (
 	NonDetStep // Non-deterministic choice encountered (from oneof builtin)
 )
 
+// YieldType distinguishes between regular yields and weakly fair yields
+type YieldType int
+
+const (
+	YieldNormal      YieldType = iota
+	YieldWeaklyFair  // Weakly fair yield (from fstep) - no stutter checking
+)
+
 type Program interface {
 	GetInstruction(vm.ExecPtr) (vm.Op, error)
 	Resolve(name string) (vm.ExecPtr, bool)
@@ -226,7 +234,13 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		// This documents which step caused the yield
 		frame.Push(inst.Arg)
 		frame.PC = frame.PC.Inc()
-		return YieldStep, 0, nil
+		return YieldStep, int(YieldNormal), nil
+	case vm.FAIR_YIELD:
+		// Weakly fair yield - similar to YIELD but marks as WeaklyFairYield
+		// This prevents stutter checking at this point
+		frame.Push(inst.Arg)
+		frame.PC = frame.PC.Inc()
+		return YieldStep, int(YieldWeaklyFair), nil
 	case vm.ITER_START:
 		// Pop the iterable from stack
 		iterable := frame.Pop()

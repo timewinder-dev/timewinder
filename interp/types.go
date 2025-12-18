@@ -66,7 +66,9 @@ const (
 	Start Pause = iota
 	Finished
 	Yield
-	NonDet // Paused due to non-deterministic value (oneof)
+	NonDet           // Paused due to non-deterministic value (oneof)
+	WeaklyFairYield  // Weakly fair yield (from fstep) - no stutter checking
+	Stuttering       // Virtual state for stutter checking (as if process terminates)
 )
 
 func (p Pause) String() string {
@@ -79,6 +81,10 @@ func (p Pause) String() string {
 		return "Yield"
 	case NonDet:
 		return "NonDet"
+	case WeaklyFairYield:
+		return "WeaklyFairYield"
+	case Stuttering:
+		return "Stuttering"
 	default:
 		return fmt.Sprintf("Unknown(%d)", p)
 	}

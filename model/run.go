@@ -44,6 +44,8 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 			continue
 		case interp.Yield:
 			fallthrough
+		case interp.WeaklyFairYield:
+			fallthrough
 		case interp.Start:
 			// Thread is runnable - create successor thunks
 			for _, s := range states {
