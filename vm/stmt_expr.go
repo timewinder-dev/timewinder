@@ -30,6 +30,11 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		if err != nil {
 			return err
 		}
+		// Add implicit return at end of function if not already present
+		if len(sub.ops) == 0 || sub.ops[len(sub.ops)-1].Code != RETURN {
+			sub.emit(PUSH, None)
+			sub.emit(RETURN)
+		}
 		cc.subContext[name] = sub
 	case *syntax.ExprStmt:
 		if _, ok := v.X.(*syntax.Literal); ok {
@@ -40,7 +45,10 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		if err != nil {
 			return err
 		}
-		cc.emit(POP)
+		// Only POP if it's not a special call that handles its own stack
+		if !isSpecialWithoutStackResult(v.X) {
+			cc.emit(POP)
+		}
 	case *syntax.ForStmt:
 		idents := 0
 		switch vars := v.Vars.(type) {
@@ -80,7 +88,31 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		}
 		cc.emit(ITER_NEXT)
 		cc.emit(LABEL, StrValue(endLabel))
-	//case *syntax.WhileStmt:
+	case *syntax.WhileStmt:
+		// while condition:
+		//   body
+		// Compiles to:
+		//   start_label:
+		//     <condition>
+		//     JFALSE end_label  ; JFALSE consumes the condition value
+		//     <body>
+		//     JMP start_label
+		//   end_label:
+		startLabel := cc.newLabel()
+		endLabel := cc.newLabel()
+		cc.emitLabel(startLabel)
+		err := cc.expr(v.Cond)
+		if err != nil {
+			return err
+		}
+		cc.emit(JFALSE, StrValue(endLabel))
+		// No POP needed - JFALSE already consumed the condition
+		err = cc.buildFromStatements(v.Body)
+		if err != nil {
+			return err
+		}
+		cc.emit(JMP, StrValue(startLabel))
+		cc.emitLabel(endLabel)
 	case *syntax.IfStmt:
 		err := cc.expr(v.Cond)
 		if err != nil {
@@ -240,7 +272,35 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 		cc.emit(PUSH, val)
 	case *syntax.ParenExpr:
 		return cc.expr(unparen(v))
-	//case *syntax.SliceExpr:
+	case *syntax.SliceExpr:
+		// array[start:end:step] - step is not supported yet
+		if v.Step != nil {
+			return errors.New("Slice step is not supported")
+		}
+		// Push the array being sliced
+		err := cc.expr(v.X)
+		if err != nil {
+			return err
+		}
+		// Push start index (or None if omitted)
+		if v.Lo != nil {
+			err = cc.expr(v.Lo)
+			if err != nil {
+				return err
+			}
+		} else {
+			cc.emit(PUSH, None)
+		}
+		// Push end index (or None if omitted)
+		if v.Hi != nil {
+			err = cc.expr(v.Hi)
+			if err != nil {
+				return err
+			}
+		} else {
+			cc.emit(PUSH, None)
+		}
+		cc.emit(SLICE)
 	case *syntax.TupleExpr:
 		for _, exp := range v.List {
 			err := cc.expr(exp)

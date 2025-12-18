@@ -73,6 +73,12 @@ func (f *StackFrame) Clone() *StackFrame {
 	for _, i := range f.IteratorStack {
 		out.IteratorStack = append(out.IteratorStack, i.Clone())
 	}
+	if f.WaitCondition != nil {
+		out.WaitCondition = &WaitConditionInfo{
+			ConditionPC:  f.WaitCondition.ConditionPC,
+			IsWeaklyFair: f.WaitCondition.IsWeaklyFair,
+		}
+	}
 	return out
 }
 

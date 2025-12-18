@@ -186,6 +186,10 @@ func (cc *compileContext) intoFunction() (*Function, error) {
 		case ITER_START_2:
 			fallthrough
 		case JFALSE:
+			fallthrough
+		case CONDITIONAL_YIELD:
+			fallthrough
+		case CONDITIONAL_FAIR_YIELD:
 			if v, ok := b.Arg.(StrValue); ok {
 				b.Arg = IntValue(offsetmap[string(v)])
 			}

@@ -116,8 +116,15 @@ func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*Mo
 	w := s.Executor.DebugWriter
 	threadPauseReason := st.PauseReason[t.ToRun]
 
-	// Only check stutter for normal Yield (not WeaklyFairYield)
-	if threadPauseReason != interp.Yield || len(s.Executor.TemporalConstraints) == 0 {
+	// Check stutter for:
+	// - Yield (normal step())
+	// - Waiting (until() - user requested stutter checking)
+	// Skip for:
+	// - WeaklyFairYield (fstep())
+	// - WeaklyFairWaiting (funtil())
+	shouldCheck := (threadPauseReason == interp.Yield || threadPauseReason == interp.Waiting)
+
+	if !shouldCheck || len(s.Executor.TemporalConstraints) == 0 {
 		return nil, nil
 	}
 

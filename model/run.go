@@ -42,6 +42,28 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 		case interp.Finished:
 			// Thread has finished - no successors
 			continue
+
+		case interp.Waiting:
+			fallthrough
+		case interp.WeaklyFairWaiting:
+			// Re-check if wait condition is now satisfied
+			satisfied, err := evaluateWaitCondition(state, i, exec.Program)
+			if err != nil {
+				return nil, fmt.Errorf("Error evaluating wait condition for thread %d: %w", i, err)
+			}
+			if !satisfied {
+				// Still waiting - not runnable
+				continue
+			}
+			// Condition now satisfied - thread is runnable
+			for _, s := range states {
+				out = append(out, &Thunk{
+					ToRun: i,
+					State: s,
+					Trace: append(t.Trace, trace),
+				})
+			}
+
 		case interp.Yield:
 			fallthrough
 		case interp.WeaklyFairYield:
@@ -59,6 +81,37 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 		}
 	}
 	return out, nil
+}
+
+// evaluateWaitCondition re-executes the wait condition to check if it's now true
+func evaluateWaitCondition(state *interp.State, threadIdx int, prog *vm.Program) (bool, error) {
+	currentFrame := state.Stacks[threadIdx].CurrentStack()
+	if currentFrame.WaitCondition == nil {
+		return false, fmt.Errorf("Thread %d in Waiting state but WaitCondition is nil", threadIdx)
+	}
+
+	// Clone state for test evaluation (don't modify original)
+	testState := state.Clone()
+	testFrame := testState.Stacks[threadIdx].CurrentStack()
+
+	// Rewind PC to condition start
+	testFrame.PC = currentFrame.WaitCondition.ConditionPC
+
+	// Execute this thread until it pauses
+	_, err := interp.RunToPause(prog, testState, threadIdx)
+	if err != nil {
+		return false, fmt.Errorf("Error re-evaluating wait condition: %w", err)
+	}
+
+	// Check why it paused
+	newReason := testState.PauseReason[threadIdx]
+	if newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting {
+		// Still waiting - condition is still false
+		return false, nil
+	}
+
+	// Paused for a different reason or finished - condition must be true
+	return true, nil
 }
 
 // FilterPropertiesByOperator returns properties that match the given operator

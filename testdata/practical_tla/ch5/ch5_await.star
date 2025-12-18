@@ -1,7 +1,7 @@
 # Awaiting processes should be easy
 
 queue = []
-max_queue_size = 3
+max_queue_size = oneof(range(1, 20))
 
 def bounded():
   return len(queue) <= max_queue_size
@@ -14,5 +14,5 @@ def reader():
 
 def writer():
   while True:
-    queue.append("msg")
-    until(len(queue) <= max_queue_size)
+    queue = append(queue, "msg")
+    until(len(queue) < max_queue_size)

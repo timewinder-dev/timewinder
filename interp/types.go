@@ -14,11 +14,17 @@ type State struct {
 }
 
 type StackFrame struct {
-	Stack         []vm.Value
-	PC            vm.ExecPtr
-	Variables     map[string]vm.Value
-	IteratorStack []*IteratorState
-	PendingNonDet *vm.NonDetValue // Set when a builtin returns NonDetValue
+	Stack          []vm.Value
+	PC             vm.ExecPtr
+	Variables      map[string]vm.Value
+	IteratorStack  []*IteratorState
+	PendingNonDet  *vm.NonDetValue     // Set when a builtin returns NonDetValue
+	WaitCondition  *WaitConditionInfo  // Set when thread is waiting on until()/funtil()
+}
+
+type WaitConditionInfo struct {
+	ConditionPC  vm.ExecPtr // PC pointing to start of condition expression
+	IsWeaklyFair bool       // true for funtil(), false for until()
 }
 
 type StackFrames []*StackFrame
@@ -66,9 +72,11 @@ const (
 	Start Pause = iota
 	Finished
 	Yield
-	NonDet           // Paused due to non-deterministic value (oneof)
-	WeaklyFairYield  // Weakly fair yield (from fstep) - no stutter checking
-	Stuttering       // Virtual state for stutter checking (as if process terminates)
+	NonDet            // Paused due to non-deterministic value (oneof)
+	WeaklyFairYield   // Weakly fair yield (from fstep) - no stutter checking
+	Stuttering        // Virtual state for stutter checking (as if process terminates)
+	Waiting           // Blocked on until() condition
+	WeaklyFairWaiting // Blocked on funtil() condition
 )
 
 func (p Pause) String() string {
@@ -85,6 +93,10 @@ func (p Pause) String() string {
 		return "WeaklyFairYield"
 	case Stuttering:
 		return "Stuttering"
+	case Waiting:
+		return "Waiting"
+	case WeaklyFairWaiting:
+		return "WeaklyFairWaiting"
 	default:
 		return fmt.Sprintf("Unknown(%d)", p)
 	}

@@ -6,14 +6,18 @@ import (
 
 // BuiltinRegistry maps builtin function names to their implementations
 var BuiltinRegistry = map[string]func(args []Value) (Value, error){
-	"range": builtinRange,
-	"oneof": builtinOneof,
+	"range":  builtinRange,
+	"oneof":  builtinOneof,
+	"len":    builtinLen,
+	"append": builtinAppend,
 }
 
 // AllBuiltins contains the BuiltinValue instances to inject into global scope
 var AllBuiltins = map[string]BuiltinValue{
-	"range": {Name: "range"},
-	"oneof": {Name: "oneof"},
+	"range":  {Name: "range"},
+	"oneof":  {Name: "oneof"},
+	"len":    {Name: "len"},
+	"append": {Name: "append"},
 }
 
 // builtinRange implements Python-like range() function
@@ -114,4 +118,40 @@ func builtinOneof(args []Value) (Value, error) {
 
 	// Return NonDetValue - will trigger immediate expansion in the model checker
 	return NonDetValue{Choices: arr}, nil
+}
+
+// builtinLen returns the length of arrays, strings, or dicts
+func builtinLen(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("len() takes exactly 1 argument, got %d", len(args))
+	}
+
+	switch val := args[0].(type) {
+	case ArrayValue:
+		return IntValue(len(val)), nil
+	case StrValue:
+		return IntValue(len(val)), nil
+	case StructValue:
+		return IntValue(len(val)), nil
+	default:
+		return nil, fmt.Errorf("len() argument must be array, string, or dict, got %T", args[0])
+	}
+}
+
+// builtinAppend returns a new array with the element appended (functional style)
+func builtinAppend(args []Value) (Value, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("append() takes exactly 2 arguments (array, element), got %d", len(args))
+	}
+
+	arr, ok := args[0].(ArrayValue)
+	if !ok {
+		return nil, fmt.Errorf("append() first argument must be an array, got %T", args[0])
+	}
+
+	// Return new array with element appended (functional style)
+	newArr := make(ArrayValue, len(arr)+1)
+	copy(newArr, arr)
+	newArr[len(arr)] = args[1]
+	return newArr, nil
 }

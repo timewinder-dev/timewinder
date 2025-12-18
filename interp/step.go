@@ -20,12 +20,14 @@ const (
 	NonDetStep // Non-deterministic choice encountered (from oneof builtin)
 )
 
-// YieldType distinguishes between regular yields and weakly fair yields
+// YieldType distinguishes between different types of yields
 type YieldType int
 
 const (
-	YieldNormal      YieldType = iota
-	YieldWeaklyFair  // Weakly fair yield (from fstep) - no stutter checking
+	YieldNormal             YieldType = iota
+	YieldWeaklyFair                   // Weakly fair yield (from fstep) - no stutter checking
+	YieldWaiting                      // Waiting on condition (from until)
+	YieldWeaklyFairWaiting            // Weakly fair waiting (from funtil)
 )
 
 type Program interface {
@@ -166,6 +168,63 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		} else {
 			frame.Push(vm.BoolFalse)
 		}
+	case vm.SLICE:
+		// Stack: Array Start End -> Result
+		// None for start means 0, None for end means len(array)
+		endVal := frame.Pop()
+		startVal := frame.Pop()
+		arrayVal := frame.Pop()
+
+		arr, ok := arrayVal.(vm.ArrayValue)
+		if !ok {
+			return ErrorStep, 0, fmt.Errorf("SLICE requires an array, got %T", arrayVal)
+		}
+
+		// Determine start index
+		start := 0
+		if startVal != vm.None {
+			startInt, ok := startVal.(vm.IntValue)
+			if !ok {
+				return ErrorStep, 0, fmt.Errorf("SLICE start index must be an integer or None, got %T", startVal)
+			}
+			start = int(startInt)
+			if start < 0 {
+				start = len(arr) + start
+			}
+			if start < 0 {
+				start = 0
+			}
+			if start > len(arr) {
+				start = len(arr)
+			}
+		}
+
+		// Determine end index
+		end := len(arr)
+		if endVal != vm.None {
+			endInt, ok := endVal.(vm.IntValue)
+			if !ok {
+				return ErrorStep, 0, fmt.Errorf("SLICE end index must be an integer or None, got %T", endVal)
+			}
+			end = int(endInt)
+			if end < 0 {
+				end = len(arr) + end
+			}
+			if end < 0 {
+				end = 0
+			}
+			if end > len(arr) {
+				end = len(arr)
+			}
+		}
+
+		// Create sliced array
+		if start > end {
+			start = end
+		}
+		result := make(vm.ArrayValue, end-start)
+		copy(result, arr[start:end])
+		frame.Push(result)
 	case vm.JMP:
 		// Unconditional jump to label
 		if label, ok := inst.Arg.(vm.IntValue); ok {
@@ -241,6 +300,54 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		frame.Push(inst.Arg)
 		frame.PC = frame.PC.Inc()
 		return YieldStep, int(YieldWeaklyFair), nil
+	case vm.CONDITIONAL_YIELD:
+		// Pop condition result from stack
+		condResult := frame.Pop()
+		retryOffset, ok := inst.Arg.(vm.IntValue)
+		if !ok {
+			return ErrorStep, 0, fmt.Errorf("CONDITIONAL_YIELD requires integer offset")
+		}
+
+		frame.PC = frame.PC.Inc()
+
+		if condResult.AsBool() {
+			// Condition satisfied - ALWAYS yield (to allow interleaving)
+			// but thread is immediately runnable
+			frame.WaitCondition = nil
+			return YieldStep, 0, nil // Normal yield - thread is runnable
+		}
+
+		// Condition false - yield and mark as waiting
+		// Thread won't be runnable until condition becomes true
+		frame.WaitCondition = &WaitConditionInfo{
+			ConditionPC:  frame.PC.SetOffset(int(retryOffset)),
+			IsWeaklyFair: false,
+		}
+		return YieldStep, int(YieldWaiting), nil
+	case vm.CONDITIONAL_FAIR_YIELD:
+		// Pop condition result from stack
+		condResult := frame.Pop()
+		retryOffset, ok := inst.Arg.(vm.IntValue)
+		if !ok {
+			return ErrorStep, 0, fmt.Errorf("CONDITIONAL_FAIR_YIELD requires integer offset")
+		}
+
+		frame.PC = frame.PC.Inc()
+
+		if condResult.AsBool() {
+			// Condition satisfied - ALWAYS yield (to allow interleaving)
+			// but thread is immediately runnable (no stutter checking)
+			frame.WaitCondition = nil
+			return YieldStep, int(YieldWeaklyFair), nil // Weakly fair yield
+		}
+
+		// Condition false - yield and mark as weakly fair waiting
+		// Thread won't be runnable until condition becomes true
+		frame.WaitCondition = &WaitConditionInfo{
+			ConditionPC:  frame.PC.SetOffset(int(retryOffset)),
+			IsWeaklyFair: true,
+		}
+		return YieldStep, int(YieldWeaklyFairWaiting), nil
 	case vm.ITER_START:
 		// Pop the iterable from stack
 		iterable := frame.Pop()

@@ -41,6 +41,15 @@ func FormatPropertyViolation(v PropertyViolation) string {
 
 	if len(v.Trace) == 0 {
 		result += fmt.Sprintf("  (Initial state - no execution yet)\n")
+
+		// Show initial state variables to help understand the violation
+		if v.State != nil {
+			result += "\n" + color.Gray.Sprint("--------------------------------------------------------------------------------") + "\n"
+			result += color.Cyan.Sprint("Initial State Variables:") + "\n"
+			result += color.Gray.Sprint("--------------------------------------------------------------------------------") + "\n"
+			stateStr := v.State.PrettyPrint(v.Program)
+			result += stateStr
+		}
 	} else {
 		// Show detailed trace if --details flag is set
 		if v.ShowDetails && v.Program != nil && v.CAS != nil {

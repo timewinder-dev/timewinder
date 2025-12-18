@@ -90,9 +90,14 @@ func RunToPause(prog *vm.Program, s *State, thread int) ([]vm.Value, error) {
 			return nil, nil
 		case YieldStep:
 			// Check yield type to set appropriate PauseReason
-			if YieldType(n) == YieldWeaklyFair {
+			switch YieldType(n) {
+			case YieldWaiting:
+				s.PauseReason[thread] = Waiting
+			case YieldWeaklyFairWaiting:
+				s.PauseReason[thread] = WeaklyFairWaiting
+			case YieldWeaklyFair:
 				s.PauseReason[thread] = WeaklyFairYield
-			} else {
+			default:
 				s.PauseReason[thread] = Yield
 			}
 			return nil, nil
