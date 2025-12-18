@@ -186,7 +186,7 @@ func checkEventuallyAlways(constraint TemporalConstraint, stateHashes []interfac
 	// "There exists a point k where property becomes true and stays true forever"
 
 	if isCycle {
-		// For cycles: find the loop start point
+		// For cycles: find the loop start point within the current trace
 		finalHash := stateHashes[n-1]
 		loopStart := -1
 		for i := 0; i < n-1; i++ {
@@ -197,11 +197,31 @@ func checkEventuallyAlways(constraint TemporalConstraint, stateHashes []interfac
 		}
 
 		if loopStart == -1 {
-			return PropertyResult{}, fmt.Errorf("cycle detected but cannot find loop start")
+			// The "cycle" is actually a revisit to a state from a different branch
+			// Treat this as a terminating trace for the purpose of EventuallyAlways
+			// (This trace ends by reaching an already-explored state)
+			for k := 0; k < n; k++ {
+				allTrueFromK := true
+				for j := k; j < n; j++ {
+					if !propValues[j] {
+						allTrueFromK = false
+						break
+					}
+				}
+				if allTrueFromK {
+					return PropertyResult{Success: true, Name: constraint.Name}, nil
+				}
+			}
+
+			return PropertyResult{
+				Success: false,
+				Name:    constraint.Name,
+				Message: fmt.Sprintf("%s: property never becomes permanently true (checked %d states, reaches previously-visited state)", constraint.Name, n),
+			}, nil
 		}
 
-		// Check if there's a point where property becomes true and stays true
-		// within and including the loop
+		// True cycle within this trace: check if property is true from some point onwards
+		// including all states in the loop
 		for k := 0; k < n; k++ {
 			allTrue := true
 			// Check from k onwards (including loop)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 )
 
@@ -74,13 +75,27 @@ func (s *SingleThreadEngine) computeStatistics() ModelStatistics {
 }
 
 // handleCyclicState handles a state that's been visited before (cycle detected)
-func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State) error {
-	fmt.Fprintf(s.Executor.DebugWriter, "Cycle detected (state already visited)\n")
+func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, stateHash cas.Hash) error {
+	fmt.Fprintf(s.Executor.DebugWriter, "State already visited (pruning this branch)\n")
 
-	// Check temporal constraints for this cyclic trace
-	if len(s.Executor.TemporalConstraints) > 0 {
+	// Check if this is a true cycle within the current trace
+	// (i.e., does this state appear earlier in THIS trace?)
+	isTrueCycle := false
+	for _, step := range t.Trace {
+		if step.StateHash == stateHash {
+			isTrueCycle = true
+			fmt.Fprintf(s.Executor.DebugWriter, "  → True cycle detected within this trace\n")
+			break
+		}
+	}
+
+	// Only check temporal constraints if this is a true cycle within the trace
+	// If it's just revisiting a state from a different branch, don't check
+	// (the trace hasn't truly terminated - it's just being pruned)
+	if isTrueCycle && len(s.Executor.TemporalConstraints) > 0 {
 		return CheckTemporalConstraints(t, st, s.Executor, true) // isCycle=true
 	}
+
 	return nil
 }
 
@@ -184,15 +199,15 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 			}
 
 			if s.Executor.VisitedStates[stateHash] {
-				// Cycle detected - this is a terminal state
-				err := s.handleCyclicState(t, st)
+				// State already visited - prune this branch
+				err := s.handleCyclicState(t, st, stateHash)
 				if err != nil {
 					result, err := s.handlePropertyViolation(t, st, err)
 					if result != nil {
 						return result, err
 					}
 				}
-				continue // Don't generate successors for cyclic states
+				continue // Don't generate successors for already-visited states
 			}
 
 			// Mark state as visited
