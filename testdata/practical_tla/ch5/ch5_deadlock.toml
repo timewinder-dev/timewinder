@@ -1,4 +1,5 @@
 [spec]
+expected_error = "Deadlock"
 
 [threads.reader]
 entrypoint = "reader()"

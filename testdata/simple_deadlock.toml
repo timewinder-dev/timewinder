@@ -1,4 +1,5 @@
 [spec]
+expected_error = "Deadlock"
 
 [threads.waiter_a]
 entrypoint = "waiter_a()"

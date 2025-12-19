@@ -157,9 +157,23 @@ func runCommand(cmd *cobra.Command, args []string) {
 	// Always print statistics at the bottom
 	fmt.Fprint(os.Stderr, model.FormatStatistics(result.Statistics))
 
-	// Print success message if no violations
-	if result.Success {
+	// Check if result matches expectations
+	matchesExpectation := spec.MatchesExpectedResult(result)
+
+	// Print success/failure message based on expectations
+	if matchesExpectation {
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, color.Green.Sprint("✓ Model checking completed successfully - all properties satisfied!"))
+		if spec.Spec.ExpectedError != "" {
+			fmt.Fprintln(os.Stderr, color.Green.Sprintf("✓ Model checking completed as expected - found expected error: %s", spec.Spec.ExpectedError))
+		} else {
+			fmt.Fprintln(os.Stderr, color.Green.Sprint("✓ Model checking completed successfully - all properties satisfied!"))
+		}
+	} else {
+		fmt.Fprintln(os.Stderr)
+		if spec.Spec.ExpectedError != "" {
+			fmt.Fprintln(os.Stderr, color.Red.Sprintf("✗ Expected error '%s' but got different result", spec.Spec.ExpectedError))
+			os.Exit(1)
+		}
+		// If no expected error, violations are already printed above
 	}
 }

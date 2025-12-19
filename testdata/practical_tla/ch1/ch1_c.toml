@@ -4,6 +4,7 @@
 # This should also fail!
 
 [spec]
+expected_error = "NoOverdrafts"
 
 # Thread 1: First wire transfer
 [threads.wire1]

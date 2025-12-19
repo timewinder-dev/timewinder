@@ -1,6 +1,8 @@
 package interp
 
-import "github.com/timewinder-dev/timewinder/vm"
+import (
+	"github.com/timewinder-dev/timewinder/vm"
+)
 
 func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value, error) {
 	frames := []*StackFrame{start}
@@ -48,6 +50,13 @@ func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value
 
 func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error) {
 	threadStack := s.GetStackFrames(thread)
+
+	// Helper to save threadStack back to state
+	saveStack := func() {
+		s.ThreadSets[thread.SetIdx].Stacks[thread.LocalIdx] = threadStack
+	}
+	defer saveStack() // Always save on return
+
 	for {
 		res, n, err := Step(prog, s.Globals, threadStack)
 		if err != nil {
@@ -88,8 +97,13 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 		case ContinueStep:
 			continue
 		case EndStep:
-			s.SetPauseReason(thread, Finished)
-			return nil, nil
+			if len(threadStack) == 1 {
+				s.SetPauseReason(thread, Finished)
+				return nil, nil
+			}
+			// Function ended without explicit return - pop frame and push None
+			threadStack.PopStack()
+			threadStack.CurrentStack().Push(vm.None)
 		case YieldStep:
 			// Check yield type to set appropriate PauseReason
 			switch YieldType(n) {

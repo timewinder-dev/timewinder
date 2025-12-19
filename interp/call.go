@@ -31,7 +31,9 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 		Main:    callprog.Main,
 		Program: prog,
 	}
-	frame := &StackFrame{}
+	frame := &StackFrame{
+		Stack: []vm.Value{},
+	}
 	for {
 		v, n, err := Step(overlay, globals, []*StackFrame{frame})
 		if err != nil {
@@ -99,7 +101,8 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 		}
 	}
 	newFrame := &StackFrame{
-		PC: ptr,
+		PC:    ptr,
+		Stack: []vm.Value{},
 	}
 	fn := prog.Code[ptr.CodeID()-1]
 	for _, p := range fn.Params {

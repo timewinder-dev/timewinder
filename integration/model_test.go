@@ -53,17 +53,30 @@ func TestModelSpecs(t *testing.T) {
 			require.NoError(t, err, "Error during model checking")
 			require.NotNil(t, result, "Result should not be nil")
 
-			// For now, we just verify it runs without panicking
-			// Individual tests can assert on specific properties
+			// Log statistics
 			t.Logf("Stats: %d transitions, %d unique states, %d duplicates, max depth %d",
 				result.Statistics.TotalTransitions,
 				result.Statistics.UniqueStates,
 				result.Statistics.DuplicateStates,
 				result.Statistics.MaxDepth)
 
-			if !result.Success {
-				t.Logf("Found %d property violations (this may be expected)", result.Statistics.ViolationCount)
+			// Check if result matches expectations (using expected_error field)
+			matchesExpectation := spec.MatchesExpectedResult(result)
+			if spec.Spec.ExpectedError != "" {
+				if matchesExpectation {
+					t.Logf("✓ Found expected error: %s", spec.Spec.ExpectedError)
+				} else if result.Success {
+					t.Errorf("Expected error '%s' but model checking succeeded", spec.Spec.ExpectedError)
+				} else {
+					t.Errorf("Expected error '%s' but got different violation", spec.Spec.ExpectedError)
+				}
+			} else {
+				if !result.Success {
+					t.Errorf("Expected success but found %d property violations", result.Statistics.ViolationCount)
+				}
 			}
+
+			require.True(t, matchesExpectation, "Result should match expected outcome")
 		})
 
 		return nil

@@ -97,7 +97,9 @@ func (e *Executor) Initialize() error {
 }
 
 func (e *Executor) initializeGlobal() error {
-	f := &interp.StackFrame{}
+	f := &interp.StackFrame{
+		Stack: []vm.Value{},
+	}
 
 	// Inject builtin functions into global scope BEFORE running global code
 	for name, builtin := range vm.AllBuiltins {

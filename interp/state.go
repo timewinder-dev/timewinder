@@ -13,7 +13,9 @@ import (
 
 func NewState() *State {
 	return &State{
-		Globals:    &StackFrame{},
+		Globals: &StackFrame{
+			Stack: []vm.Value{},
+		},
 		ThreadSets: []ThreadSet{},
 	}
 }
@@ -89,7 +91,6 @@ func (s *State) AddThread(frame *StackFrame) {
 func (f *StackFrame) Pop() vm.Value {
 	if len(f.Stack) == 0 {
 		panic("Stack underrun")
-		//return vm.None
 	}
 	v := f.Stack[len(f.Stack)-1]
 	f.Stack = f.Stack[:len(f.Stack)-1]
@@ -102,7 +103,8 @@ func (f *StackFrame) Push(v vm.Value) {
 
 func (f *StackFrame) Clone() *StackFrame {
 	out := &StackFrame{
-		PC: f.PC,
+		PC:    f.PC,
+		Stack: []vm.Value{},
 	}
 	for _, v := range f.Stack {
 		out.Stack = append(out.Stack, v.Clone())

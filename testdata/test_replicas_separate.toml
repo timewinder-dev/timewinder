@@ -1,5 +1,6 @@
 [spec]
 # file = "test_replicas_separate.star" # optional, auto-detected if not specified
+expected_error = "FinalCount"
 
 # Create 3 SEPARATE thread groups (not using replicas)
 # These are treated as distinct threads, so the model checker

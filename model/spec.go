@@ -19,7 +19,8 @@ type Spec struct {
 }
 
 type SpecDetails struct {
-	File string `toml:",omitempty"`
+	File          string `toml:",omitempty"`
+	ExpectedError string `toml:"expected_error,omitempty"` // If set, expect a violation/error containing this substring
 }
 
 type ThreadSpec struct {
@@ -63,6 +64,40 @@ func LoadSpecFromFile(path string) (*Spec, error) {
 	filedir := filepath.Dir(path)
 	s.Spec.File = filepath.Clean(filepath.Join(filedir, s.Spec.File))
 	return s, nil
+}
+
+// MatchesExpectedResult checks if the model result matches expectations
+// Returns true if:
+// - ExpectedError is empty and result.Success is true
+// - ExpectedError is set and any violation message contains it (case insensitive)
+func (s *Spec) MatchesExpectedResult(result *ModelResult) bool {
+	if s.Spec.ExpectedError == "" {
+		// No error expected - success means pass
+		return result.Success
+	}
+
+	// Error expected - check if any violation matches
+	if result.Success {
+		return false // Expected error but got success
+	}
+
+	expectedLower := strings.ToLower(s.Spec.ExpectedError)
+	for _, violation := range result.Violations {
+		// Check property name
+		if strings.Contains(strings.ToLower(violation.PropertyName), expectedLower) {
+			return true
+		}
+		// Check message
+		if strings.Contains(strings.ToLower(violation.Message), expectedLower) {
+			return true
+		}
+		// Check property type
+		if strings.Contains(strings.ToLower(violation.PropertyType), expectedLower) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Spec) BuildExecutor(casStore cas.CAS) (*Executor, error) {

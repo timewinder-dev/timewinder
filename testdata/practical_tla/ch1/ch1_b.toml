@@ -2,6 +2,7 @@
 # This tests interleaving of two threads doing the same operation
 
 [spec]
+expected_error = "NoOverdrafts"
 
 # Thread 1: First wire transfer
 [threads.wire1]

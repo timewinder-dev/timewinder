@@ -1,5 +1,6 @@
 [spec]
 # file = "test_replicas.star" # optional, auto-detected if not specified
+expected_error = "FinalCount"
 
 # Create 3 symmetric replicas of the worker thread
 # These threads are interchangeable (symmetric), which allows the model checker

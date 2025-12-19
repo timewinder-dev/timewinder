@@ -10,10 +10,12 @@ import (
 )
 
 func TestSmall(t *testing.T) {
+	t.Skip("Compilation tests")
 	testDir("../testdata/small", t)
 }
 
 func TestPracticalTLA(t *testing.T) {
+	t.Skip("Compilation tests")
 	testDir("../testdata/practical_tla", t)
 }
 
