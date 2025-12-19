@@ -1,0 +1,14 @@
+[spec]
+# file = "test_replicas.star" # optional, auto-detected if not specified
+
+# Create 3 symmetric replicas of the worker thread
+# These threads are interchangeable (symmetric), which allows the model checker
+# to explore fewer equivalent states and improve performance
+[threads.worker]
+entrypoint = "worker()"
+replicas = 3
+
+[properties]
+# Verify that after all workers finish, counter equals the number of workers
+# Note: This property will fail to demonstrate race conditions without proper synchronization
+FinalCount = {EventuallyAlways = "final_count"}

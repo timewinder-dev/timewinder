@@ -84,7 +84,7 @@ func (e *Executor) Initialize() error {
 		return err
 	}
 	for name, s := range e.Spec.Threads {
-		err = e.spawnThread(name, s.Entrypoint)
+		err = e.spawnThread(name, s.Entrypoint, s.Replicas)
 		if err != nil {
 			return err
 		}
@@ -149,13 +149,40 @@ func (e *Executor) initializeProperties() error {
 	return nil
 }
 
-func (e *Executor) spawnThread(name string, entrypoint string) error {
-	f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, entrypoint)
-	if err != nil {
-		return err
+func (e *Executor) spawnThread(name string, entrypoint string, replicas int) error {
+	// Default to 1 replica if not specified
+	if replicas <= 0 {
+		replicas = 1
 	}
-	e.InitialState.AddThread(f)
-	e.Threads = append(e.Threads, name)
+
+	// Create a ThreadSet with the specified number of replicas
+	threadSet := interp.ThreadSet{
+		Stacks:      make([]interp.StackFrames, replicas),
+		PauseReason: make([]interp.Pause, replicas),
+	}
+
+	// Initialize each replica with the same entrypoint
+	for i := 0; i < replicas; i++ {
+		f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, entrypoint)
+		if err != nil {
+			return err
+		}
+		threadSet.Stacks[i] = interp.StackFrames{f}
+		threadSet.PauseReason[i] = interp.Start
+	}
+
+	// Add the thread set to the state
+	e.InitialState.ThreadSets = append(e.InitialState.ThreadSets, threadSet)
+
+	// Add thread names for each replica
+	for i := 0; i < replicas; i++ {
+		if replicas == 1 {
+			e.Threads = append(e.Threads, name)
+		} else {
+			e.Threads = append(e.Threads, fmt.Sprintf("%s[%d]", name, i))
+		}
+	}
+
 	return nil
 }
 

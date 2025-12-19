@@ -24,6 +24,7 @@ type SpecDetails struct {
 
 type ThreadSpec struct {
 	Entrypoint string `toml:",omitempty"`
+	Replicas   int    `toml:",omitempty"` // Number of symmetric replicas (default: 1)
 }
 
 type PropertySpec struct {
