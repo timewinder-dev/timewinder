@@ -37,46 +37,50 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 
 	// Generate successor thunks for each runnable thread
 	var out []*Thunk
-	for i, r := range state.PauseReason {
-		switch r {
-		case interp.Finished:
-			// Thread has finished - no successors
-			continue
+	for setIdx, threadSet := range state.ThreadSets {
+		for localIdx, r := range threadSet.PauseReason {
+			threadID := interp.ThreadID{SetIdx: setIdx, LocalIdx: localIdx}
 
-		case interp.Waiting:
-			fallthrough
-		case interp.WeaklyFairWaiting:
-			// Re-check if wait condition is now satisfied
-			satisfied, err := evaluateWaitCondition(state, i, exec.Program)
-			if err != nil {
-				return nil, fmt.Errorf("Error evaluating wait condition for thread %d: %w", i, err)
-			}
-			if !satisfied {
-				// Still waiting - not runnable
+			switch r {
+			case interp.Finished:
+				// Thread has finished - no successors
 				continue
-			}
-			// Condition now satisfied - thread is runnable
-			for _, s := range states {
-				out = append(out, &Thunk{
-					ToRun: i,
-					State: s,
-					Trace: append(t.Trace, trace),
-				})
-			}
 
-		case interp.Yield:
-			fallthrough
-		case interp.WeaklyFairYield:
-			fallthrough
-		case interp.Start:
-			// Thread is runnable - create successor thunks
-			for _, s := range states {
-				newThunk := &Thunk{
-					ToRun: i,
-					State: s,
-					Trace: append(t.Trace, trace),
+			case interp.Waiting:
+				fallthrough
+			case interp.WeaklyFairWaiting:
+				// Re-check if wait condition is now satisfied
+				satisfied, err := evaluateWaitCondition(state, threadID, exec.Program)
+				if err != nil {
+					return nil, fmt.Errorf("Error evaluating wait condition for thread (%d,%d): %w", setIdx, localIdx, err)
 				}
-				out = append(out, newThunk)
+				if !satisfied {
+					// Still waiting - not runnable
+					continue
+				}
+				// Condition now satisfied - thread is runnable
+				for _, s := range states {
+					out = append(out, &Thunk{
+						ToRun: threadID,
+						State: s,
+						Trace: append(t.Trace, trace),
+					})
+				}
+
+			case interp.Yield:
+				fallthrough
+			case interp.WeaklyFairYield:
+				fallthrough
+			case interp.Start:
+				// Thread is runnable - create successor thunks
+				for _, s := range states {
+					newThunk := &Thunk{
+						ToRun: threadID,
+						State: s,
+						Trace: append(t.Trace, trace),
+					}
+					out = append(out, newThunk)
+				}
 			}
 		}
 	}
@@ -84,27 +88,27 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 }
 
 // evaluateWaitCondition re-executes the wait condition to check if it's now true
-func evaluateWaitCondition(state *interp.State, threadIdx int, prog *vm.Program) (bool, error) {
-	currentFrame := state.Stacks[threadIdx].CurrentStack()
+func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *vm.Program) (bool, error) {
+	currentFrame := state.GetStackFrames(threadID).CurrentStack()
 	if currentFrame.WaitCondition == nil {
-		return false, fmt.Errorf("Thread %d in Waiting state but WaitCondition is nil", threadIdx)
+		return false, fmt.Errorf("Thread (%d,%d) in Waiting state but WaitCondition is nil", threadID.SetIdx, threadID.LocalIdx)
 	}
 
 	// Clone state for test evaluation (don't modify original)
 	testState := state.Clone()
-	testFrame := testState.Stacks[threadIdx].CurrentStack()
+	testFrame := testState.GetStackFrames(threadID).CurrentStack()
 
 	// Rewind PC to condition start
 	testFrame.PC = currentFrame.WaitCondition.ConditionPC
 
 	// Execute this thread until it pauses
-	_, err := interp.RunToPause(prog, testState, threadIdx)
+	_, err := interp.RunToPause(prog, testState, threadID)
 	if err != nil {
 		return false, fmt.Errorf("Error re-evaluating wait condition: %w", err)
 	}
 
 	// Check why it paused
-	newReason := testState.PauseReason[threadIdx]
+	newReason := testState.GetPauseReason(threadID)
 	if newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting {
 		// Still waiting - condition is still false
 		return false, nil

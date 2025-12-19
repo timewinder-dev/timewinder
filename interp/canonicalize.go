@@ -35,20 +35,22 @@ func (s *State) Expand() ([]*State, error) {
 		}
 		return out, nil
 	}
-	for i, l := range s.Stacks {
-		for j, f := range l {
-			v, err := f.Expand()
-			if err != nil {
-				return nil, err
-			}
-			if v != nil {
-				var out []*State
-				for _, x := range v {
-					n := s.Clone()
-					n.Stacks[i][j] = x
-					out = append(out, n)
+	for setIdx, threadSet := range s.ThreadSets {
+		for localIdx, stack := range threadSet.Stacks {
+			for frameIdx, f := range stack {
+				v, err := f.Expand()
+				if err != nil {
+					return nil, err
 				}
-				return out, nil
+				if v != nil {
+					var out []*State
+					for _, x := range v {
+						n := s.Clone()
+						n.ThreadSets[setIdx].Stacks[localIdx][frameIdx] = x
+						out = append(out, n)
+					}
+					return out, nil
+				}
 			}
 		}
 	}

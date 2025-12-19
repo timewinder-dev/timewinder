@@ -116,15 +116,22 @@ func reconstructTrace(w io.Writer, v PropertyViolation) {
 
 		// Header for this step
 		fmt.Fprintf(w, "\n  Step %d:\n", i+1)
-		fmt.Fprintf(w, "  ├─ Thread: %d\n", step.ThreadRan)
+
+		// Convert ThreadID to flat index for display
+		flatIdx := 0
+		for si := 0; si < step.ThreadRan.SetIdx; si++ {
+			flatIdx += len(state.ThreadSets[si].Stacks)
+		}
+		flatIdx += step.ThreadRan.LocalIdx
+		fmt.Fprintf(w, "  ├─ Thread: %d (Set %d, Local %d)\n", flatIdx, step.ThreadRan.SetIdx, step.ThreadRan.LocalIdx)
 
 		// Get thread info
-		if step.ThreadRan >= 0 && step.ThreadRan < len(state.Stacks) {
-			stack := state.Stacks[step.ThreadRan]
+		if flatIdx < state.ThreadCount() {
+			stack := state.GetStackFrames(step.ThreadRan)
 			if len(stack) > 0 {
 				currentFrame := stack[len(stack)-1]
 				pc := currentFrame.PC
-				pauseReason := state.PauseReason[step.ThreadRan]
+				pauseReason := state.GetPauseReason(step.ThreadRan)
 
 				// Get location info
 				lineNum := v.Program.GetLineNumber(pc)
@@ -162,12 +169,23 @@ func reconstructTrace(w io.Writer, v PropertyViolation) {
 		fmt.Fprintf(w, "  ├─ Thread: %d\n", v.ThreadID)
 
 		// Get info about the violating thread
-		if v.ThreadID >= 0 && v.ThreadID < len(v.State.Stacks) {
-			stack := v.State.Stacks[v.ThreadID]
+		// Convert flat ThreadID to ThreadID struct
+		if v.ThreadID >= 0 && v.ThreadID < v.State.ThreadCount() {
+			threadID := interp.ThreadID{}
+			tmpIdx := v.ThreadID
+			for si := range v.State.ThreadSets {
+				if tmpIdx < len(v.State.ThreadSets[si].Stacks) {
+					threadID = interp.ThreadID{SetIdx: si, LocalIdx: tmpIdx}
+					break
+				}
+				tmpIdx -= len(v.State.ThreadSets[si].Stacks)
+			}
+
+			stack := v.State.GetStackFrames(threadID)
 			if len(stack) > 0 {
 				currentFrame := stack[len(stack)-1]
 				pc := currentFrame.PC
-				pauseReason := v.State.PauseReason[v.ThreadID]
+				pauseReason := v.State.GetPauseReason(threadID)
 
 				// Get location info
 				lineNum := v.Program.GetLineNumber(pc)

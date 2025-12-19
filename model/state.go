@@ -8,7 +8,7 @@ import (
 )
 
 type Thunk struct {
-	ToRun int
+	ToRun interp.ThreadID // Which thread to run (SetIdx, LocalIdx)
 	State *interp.State
 	Trace []TraceStep
 }
@@ -22,7 +22,7 @@ func (t Thunk) Clone() *Thunk {
 }
 
 type TraceStep struct {
-	ThreadRan int
+	ThreadRan interp.ThreadID // Which thread ran (SetIdx, LocalIdx)
 	StateHash cas.Hash
 }
 

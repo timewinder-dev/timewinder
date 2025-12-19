@@ -46,23 +46,24 @@ func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value
 	}
 }
 
-func RunToPause(prog *vm.Program, s *State, thread int) ([]vm.Value, error) {
+func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error) {
+	threadStack := s.GetStackFrames(thread)
 	for {
-		res, n, err := Step(prog, s.Globals, s.Stacks[thread])
+		res, n, err := Step(prog, s.Globals, threadStack)
 		if err != nil {
 			return nil, err
 		}
 		switch res {
 		case ReturnStep:
-			if len(s.Stacks[thread]) == 1 {
-				s.PauseReason[thread] = Finished
+			if len(threadStack) == 1 {
+				s.SetPauseReason(thread, Finished)
 				return nil, nil
 			}
-			f := s.Stacks[thread].PopStack()
+			f := threadStack.PopStack()
 			val := f.Pop()
-			s.Stacks[thread].CurrentStack().Push(val)
+			threadStack.CurrentStack().Push(val)
 		case CallStep:
-			currentFrame := s.Stacks[thread].CurrentStack()
+			currentFrame := threadStack.CurrentStack()
 			f, err := BuildCallFrame(prog, currentFrame, n)
 			if err != nil {
 				return nil, err
@@ -74,7 +75,7 @@ func RunToPause(prog *vm.Program, s *State, thread int) ([]vm.Value, error) {
 				if nonDet, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.NonDetValue); ok {
 					// Pop the NonDetValue from stack
 					currentFrame.Pop()
-					s.PauseReason[thread] = NonDet
+					s.SetPauseReason(thread, NonDet)
 					return nonDet.Choices, nil
 				}
 			}
@@ -82,24 +83,24 @@ func RunToPause(prog *vm.Program, s *State, thread int) ([]vm.Value, error) {
 			// Normal function call - increment caller's PC and push new frame
 			if f != nil {
 				currentFrame.PC = currentFrame.PC.Inc()
-				s.Stacks[thread].Append(f)
+				threadStack.Append(f)
 			}
 		case ContinueStep:
 			continue
 		case EndStep:
-			s.PauseReason[thread] = Finished
+			s.SetPauseReason(thread, Finished)
 			return nil, nil
 		case YieldStep:
 			// Check yield type to set appropriate PauseReason
 			switch YieldType(n) {
 			case YieldWaiting:
-				s.PauseReason[thread] = Waiting
+				s.SetPauseReason(thread, Waiting)
 			case YieldWeaklyFairWaiting:
-				s.PauseReason[thread] = WeaklyFairWaiting
+				s.SetPauseReason(thread, WeaklyFairWaiting)
 			case YieldWeaklyFair:
-				s.PauseReason[thread] = WeaklyFairYield
+				s.SetPauseReason(thread, WeaklyFairYield)
 			default:
-				s.PauseReason[thread] = Yield
+				s.SetPauseReason(thread, Yield)
 			}
 			return nil, nil
 		default:

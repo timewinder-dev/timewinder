@@ -50,7 +50,7 @@ func TestRunFunctions(t *testing.T) {
 				state.AddThread(sf)
 				_, err = RunToPause(prog, state, ThreadID{SetIdx: 0, LocalIdx: 0})
 				require.NoError(t, err)
-				val := state.GetStackFrames(ThreadID{SetIdx: 0, LocalIdx: 0}).CurrentStack().Pop()
+				val := state.Stacks[0].CurrentStack().Pop()
 				if c, ok := val.Cmp(call.expected); ok {
 					if c != 0 {
 						t.Fatalf("expected %v got %v", call.expected, val)

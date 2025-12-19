@@ -23,25 +23,40 @@ func recomposeState(c directStore, hash Hash) (*interp.State, error) {
 		return nil, fmt.Errorf("recomposing globals: %w", err)
 	}
 
-	// Reconstruct all thread stacks
-	var stacks []interp.StackFrames
-	for threadIdx, threadHashes := range ref.StacksHashes {
-		var threadStack []*interp.StackFrame
-		for frameIdx, h := range threadHashes {
-			frame, err := recomposeStackFrame(c, h)
-			if err != nil {
-				return nil, fmt.Errorf("recomposing thread %d frame %d: %w", threadIdx, frameIdx, err)
+	// Reconstruct ThreadSets
+	var threadSets []interp.ThreadSet
+	for setIdx, threadSetRef := range ref.ThreadSets {
+		var stacks []interp.StackFrames
+		var pauseReasons []interp.Pause
+
+		// Reconstruct each thread in the set
+		for localIdx, threadInstanceRef := range threadSetRef.Threads {
+			// Reconstruct stack frames for this thread
+			var threadStack []*interp.StackFrame
+			for frameIdx, h := range threadInstanceRef.StacksHashes {
+				frame, err := recomposeStackFrame(c, h)
+				if err != nil {
+					return nil, fmt.Errorf("recomposing set %d thread %d frame %d: %w", setIdx, localIdx, frameIdx, err)
+				}
+				threadStack = append(threadStack, frame)
 			}
-			threadStack = append(threadStack, frame)
+
+			stacks = append(stacks, threadStack)
+			pauseReasons = append(pauseReasons, threadInstanceRef.PauseReason)
 		}
-		stacks = append(stacks, threadStack)
+
+		// Create ThreadSet
+		threadSet := interp.ThreadSet{
+			Stacks:      stacks,
+			PauseReason: pauseReasons,
+		}
+		threadSets = append(threadSets, threadSet)
 	}
 
 	// Reconstruct State
 	return &interp.State{
-		Globals:     globals,
-		Stacks:      stacks,
-		PauseReason: ref.PauseReasons,
+		Globals:    globals,
+		ThreadSets: threadSets,
 	}, nil
 }
 

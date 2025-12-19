@@ -11,6 +11,17 @@ import (
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
+// hashThreadInstance computes a hash for a ThreadInstanceRef for canonicalization
+// This allows us to sort threads within a ThreadSet by their content
+func hashThreadInstance(tir *ThreadInstanceRef) (Hash, error) {
+	var buf bytes.Buffer
+	err := tir.Serialize(&buf)
+	if err != nil {
+		return 0, fmt.Errorf("serializing thread instance: %w", err)
+	}
+	return Hash(farm.Hash64(buf.Bytes())), nil
+}
+
 // decomposeState recursively decomposes a State into a StateRef with nested hashes
 // Each nested structure (StackFrame, Value, etc.) is stored separately in the CAS
 // Returns the hash of the top-level StateRef
@@ -25,25 +36,57 @@ func decomposeState(c *MemoryCAS, s *interp.State) (Hash, error) {
 		return 0, fmt.Errorf("decomposing globals: %w", err)
 	}
 
-	// Decompose all thread stacks
-	var stacksHashes [][]Hash
-	for threadIdx, threadStack := range s.Stacks {
-		var threadHashes []Hash
-		for frameIdx, frame := range threadStack {
-			h, err := decomposeStackFrame(c, frame)
-			if err != nil {
-				return 0, fmt.Errorf("decomposing thread %d frame %d: %w", threadIdx, frameIdx, err)
+	// Decompose ThreadSets
+	var threadSetRefs []ThreadSetRef
+	for setIdx, threadSet := range s.ThreadSets {
+		var threadInstances []ThreadInstanceRef
+
+		// Decompose each thread in the set
+		for localIdx, threadStack := range threadSet.Stacks {
+			// Decompose stack frames for this thread
+			var threadHashes []Hash
+			for frameIdx, frame := range threadStack {
+				h, err := decomposeStackFrame(c, frame)
+				if err != nil {
+					return 0, fmt.Errorf("decomposing set %d thread %d frame %d: %w", setIdx, localIdx, frameIdx, err)
+				}
+				threadHashes = append(threadHashes, h)
 			}
-			threadHashes = append(threadHashes, h)
+
+			// Create ThreadInstanceRef
+			tir := ThreadInstanceRef{
+				StacksHashes: threadHashes,
+				PauseReason:  threadSet.PauseReason[localIdx],
+			}
+			threadInstances = append(threadInstances, tir)
 		}
-		stacksHashes = append(stacksHashes, threadHashes)
+
+		// Sort threads within the set by hash for canonicalization
+		// This ensures [A, B] and [B, A] produce the same hash
+		sort.Slice(threadInstances, func(i, j int) bool {
+			hi, err := hashThreadInstance(&threadInstances[i])
+			if err != nil {
+				// If hashing fails, fall back to original order
+				return false
+			}
+			hj, err := hashThreadInstance(&threadInstances[j])
+			if err != nil {
+				return false
+			}
+			return hi < hj
+		})
+
+		// Create ThreadSetRef
+		threadSetRef := ThreadSetRef{
+			Threads: threadInstances,
+		}
+		threadSetRefs = append(threadSetRefs, threadSetRef)
 	}
 
 	// Create and store StateRef
 	ref := &StateRef{
-		GlobalsHash:  globalsHash,
-		StacksHashes: stacksHashes,
-		PauseReasons: s.PauseReason,
+		GlobalsHash: globalsHash,
+		ThreadSets:  threadSetRefs,
 	}
 
 	return putDirect(c, ref)

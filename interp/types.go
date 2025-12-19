@@ -7,10 +7,21 @@ import (
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
+// ThreadID identifies a specific thread by its ThreadSet index and local index within that set
+type ThreadID struct {
+	SetIdx   int // Index of the ThreadSet
+	LocalIdx int // Index within the ThreadSet
+}
+
+// ThreadSet groups symmetric (interchangeable) threads together
+type ThreadSet struct {
+	Stacks      []StackFrames // Multiple threads in this set
+	PauseReason []Pause       // Parallel to Stacks
+}
+
 type State struct {
-	Globals     *StackFrame
-	Stacks      []StackFrames
-	PauseReason []Pause
+	Globals    *StackFrame
+	ThreadSets []ThreadSet // Groups of symmetric threads
 }
 
 type StackFrame struct {

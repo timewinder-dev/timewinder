@@ -27,9 +27,15 @@ func WeakStateHash(st *interp.State) (cas.Hash, error) {
 		return 0, err
 	}
 
+	// Flatten PauseReasons from all ThreadSets
+	var pauseReasons []interp.Pause
+	for _, threadSet := range st.ThreadSets {
+		pauseReasons = append(pauseReasons, threadSet.PauseReason...)
+	}
+
 	weak := WeakState{
 		Globals:      make(map[string]interface{}),
-		PauseReasons: st.PauseReason,
+		PauseReasons: pauseReasons,
 	}
 
 	// Parse globals back to get normalized representation
@@ -94,41 +100,62 @@ func DetectLivelock(exec *Executor, st *interp.State, currentDepth int) (bool, e
 
 // ShowStateDifferences displays the differences between two states
 func ShowStateDifferences(w io.Writer, state1, state2 *interp.State, threadNames []string) {
-	// Compare thread states
-	for i := 0; i < len(state1.Stacks); i++ {
-		if i >= len(state2.Stacks) {
-			fmt.Fprintf(w, "    Thread %d (%s): missing in state2\n", i, threadNames[i])
-			continue
-		}
+	// Build flat thread index
+	flatIdx1 := 0
 
-		frame1 := state1.Stacks[i].CurrentStack()
-		frame2 := state2.Stacks[i].CurrentStack()
+	// Compare thread states
+	for _, threadSet1 := range state1.ThreadSets {
+		for _, stack1 := range threadSet1.Stacks {
+			// Try to find corresponding thread in state2
+			if flatIdx1 >= state2.ThreadCount() {
+				fmt.Fprintf(w, "    Thread %d (%s): missing in state2\n", flatIdx1, threadNames[flatIdx1])
+				flatIdx1++
+				continue
+			}
+
+			// Get corresponding thread from state2
+			threadID2 := interp.ThreadID{}
+			tmpIdx := flatIdx1
+			for setIdx2 := range state2.ThreadSets {
+				if tmpIdx < len(state2.ThreadSets[setIdx2].Stacks) {
+					threadID2 = interp.ThreadID{SetIdx: setIdx2, LocalIdx: tmpIdx}
+					break
+				}
+				tmpIdx -= len(state2.ThreadSets[setIdx2].Stacks)
+			}
+
+			stack2 := state2.GetStackFrames(threadID2)
+
+			frame1 := stack1.CurrentStack()
+			frame2 := stack2.CurrentStack()
 
 		if frame1 == nil && frame2 == nil {
+			flatIdx1++
 			continue
 		}
 
 		if frame1 == nil || frame2 == nil {
-			fmt.Fprintf(w, "    Thread %d (%s): frame difference (nil vs non-nil)\n", i, threadNames[i])
+			fmt.Fprintf(w, "    Thread %d (%s): frame difference (nil vs non-nil)\n", flatIdx1, threadNames[flatIdx1])
+			flatIdx1++
 			continue
 		}
 
 		// Check PC differences
 		if frame1.PC != frame2.PC {
 			fmt.Fprintf(w, "    Thread %d (%s): PC differs (%v vs %v)\n",
-				i, threadNames[i], frame1.PC, frame2.PC)
+				flatIdx1, threadNames[flatIdx1], frame1.PC, frame2.PC)
 		}
 
 		// Check stack depth differences
 		if len(frame1.Stack) != len(frame2.Stack) {
 			fmt.Fprintf(w, "    Thread %d (%s): Stack depth differs (%d vs %d)\n",
-				i, threadNames[i], len(frame1.Stack), len(frame2.Stack))
+				flatIdx1, threadNames[flatIdx1], len(frame1.Stack), len(frame2.Stack))
 		}
 
 		// Check local variables
 		if len(frame1.Variables) != len(frame2.Variables) {
 			fmt.Fprintf(w, "    Thread %d (%s): Local variable count differs (%d vs %d)\n",
-				i, threadNames[i], len(frame1.Variables), len(frame2.Variables))
+				flatIdx1, threadNames[flatIdx1], len(frame1.Variables), len(frame2.Variables))
 		} else {
 			for k, v1 := range frame1.Variables {
 				if v2, ok := frame2.Variables[k]; ok {
@@ -136,19 +163,22 @@ func ShowStateDifferences(w io.Writer, state1, state2 *interp.State, threadNames
 					v2JSON, _ := json.Marshal(v2)
 					if string(v1JSON) != string(v2JSON) {
 						fmt.Fprintf(w, "    Thread %d (%s): Variable '%s' differs (%s vs %s)\n",
-							i, threadNames[i], k, v1JSON, v2JSON)
+							flatIdx1, threadNames[flatIdx1], k, v1JSON, v2JSON)
 					}
 				} else {
 					fmt.Fprintf(w, "    Thread %d (%s): Variable '%s' only in state1\n",
-						i, threadNames[i], k)
+						flatIdx1, threadNames[flatIdx1], k)
 				}
 			}
 		}
 
 		// Check call stack depth
-		if len(state1.Stacks[i]) != len(state2.Stacks[i]) {
+		if len(stack1) != len(stack2) {
 			fmt.Fprintf(w, "    Thread %d (%s): Call stack depth differs (%d vs %d frames)\n",
-				i, threadNames[i], len(state1.Stacks[i]), len(state2.Stacks[i]))
+				flatIdx1, threadNames[flatIdx1], len(stack1), len(stack2))
+		}
+
+		flatIdx1++
 		}
 	}
 }

@@ -13,23 +13,58 @@ import (
 
 func NewState() *State {
 	return &State{
-		Globals: &StackFrame{},
+		Globals:    &StackFrame{},
+		ThreadSets: []ThreadSet{},
 	}
+}
+
+// ThreadCount returns the total number of threads across all ThreadSets
+func (s *State) ThreadCount() int {
+	total := 0
+	for _, ts := range s.ThreadSets {
+		total += len(ts.Stacks)
+	}
+	return total
+}
+
+// GetStackFrames returns the stack frames for the specified thread
+func (s *State) GetStackFrames(tid ThreadID) StackFrames {
+	return s.ThreadSets[tid.SetIdx].Stacks[tid.LocalIdx]
+}
+
+// GetPauseReason returns the pause reason for the specified thread
+func (s *State) GetPauseReason(tid ThreadID) Pause {
+	return s.ThreadSets[tid.SetIdx].PauseReason[tid.LocalIdx]
+}
+
+// SetPauseReason sets the pause reason for the specified thread
+func (s *State) SetPauseReason(tid ThreadID, pause Pause) {
+	s.ThreadSets[tid.SetIdx].PauseReason[tid.LocalIdx] = pause
 }
 
 func (s *State) Clone() *State {
 	out := &State{
-		Globals: s.Globals.Clone(),
+		Globals:    s.Globals.Clone(),
+		ThreadSets: make([]ThreadSet, len(s.ThreadSets)),
 	}
-	for _, stack := range s.Stacks {
-		var new []*StackFrame
-		for _, x := range stack {
-			new = append(new, x.Clone())
+	for i, ts := range s.ThreadSets {
+		// Clone each thread's stack in the set
+		stacks := make([]StackFrames, len(ts.Stacks))
+		for j, stack := range ts.Stacks {
+			var newStack []*StackFrame
+			for _, frame := range stack {
+				newStack = append(newStack, frame.Clone())
+			}
+			stacks[j] = newStack
 		}
-		out.Stacks = append(out.Stacks, new)
-	}
-	for _, p := range s.PauseReason {
-		out.PauseReason = append(out.PauseReason, p)
+		// Copy pause reasons
+		pauseReasons := make([]Pause, len(ts.PauseReason))
+		copy(pauseReasons, ts.PauseReason)
+
+		out.ThreadSets[i] = ThreadSet{
+			Stacks:      stacks,
+			PauseReason: pauseReasons,
+		}
 	}
 	return out
 }
@@ -43,8 +78,12 @@ func (s *State) Deserialize(r io.Reader) error {
 }
 
 func (s *State) AddThread(frame *StackFrame) {
-	s.Stacks = append(s.Stacks, []*StackFrame{frame})
-	s.PauseReason = append(s.PauseReason, Start)
+	// Create a singleton ThreadSet for the new thread (Phase 1 approach)
+	threadSet := ThreadSet{
+		Stacks:      []StackFrames{[]*StackFrame{frame}},
+		PauseReason: []Pause{Start},
+	}
+	s.ThreadSets = append(s.ThreadSets, threadSet)
 }
 
 func (f *StackFrame) Pop() vm.Value {
@@ -207,73 +246,78 @@ func (s *State) PrettyPrintTo(w io.Writer, prog *vm.Program) {
 	}
 
 	// Print per-thread state
-	if len(s.Stacks) > 0 {
+	if s.ThreadCount() > 0 {
 		fmt.Fprint(w, "\nThread States:\n")
-		for i, stack := range s.Stacks {
-			pauseReason := s.PauseReason[i]
-			fmt.Fprintf(w, "  Thread %d [%s]:\n", i, pauseReason)
+		threadIdx := 0
+		for setIdx, threadSet := range s.ThreadSets {
+			for localIdx, stack := range threadSet.Stacks {
+				pauseReason := threadSet.PauseReason[localIdx]
+				fmt.Fprintf(w, "  Thread %d (Set %d, Local %d) [%s]:\n", threadIdx, setIdx, localIdx, pauseReason)
 
-			// Show pause location and context
-			if len(stack) > 0 {
-				currentFrame := stack[len(stack)-1]
-				pc := currentFrame.PC
+				// Show pause location and context
+				if len(stack) > 0 {
+					currentFrame := stack[len(stack)-1]
+					pc := currentFrame.PC
 
-				// Show source location if available
-				if prog != nil {
-					lineNum := prog.GetLineNumber(pc)
-					filename := prog.GetFilename(pc)
-					if lineNum > 0 && filename != "" {
-						basename := filepath.Base(filename)
-						fmt.Fprintf(w, "    Location: %s:%d\n", basename, lineNum)
-					} else if lineNum > 0 {
-						fmt.Fprintf(w, "    Location: line %d\n", lineNum)
+					// Show source location if available
+					if prog != nil {
+						lineNum := prog.GetLineNumber(pc)
+						filename := prog.GetFilename(pc)
+						if lineNum > 0 && filename != "" {
+							basename := filepath.Base(filename)
+							fmt.Fprintf(w, "    Location: %s:%d\n", basename, lineNum)
+						} else if lineNum > 0 {
+							fmt.Fprintf(w, "    Location: line %d\n", lineNum)
+						} else {
+							fmt.Fprintf(w, "    Location: %s\n", pc)
+						}
 					} else {
 						fmt.Fprintf(w, "    Location: %s\n", pc)
 					}
-				} else {
-					fmt.Fprintf(w, "    Location: %s\n", pc)
-				}
 
-				// If yielded, show the step name from top of stack
-				if pauseReason == Yield && len(currentFrame.Stack) > 0 {
-					topValue := currentFrame.Stack[len(currentFrame.Stack)-1]
-					if stepName, ok := topValue.(vm.StrValue); ok {
-						fmt.Fprintf(w, "    Step: %s\n", stepName)
-					}
-				}
-			}
-
-			// Show thread-local variables from all frames
-			hasLocalVars := false
-			for frameIdx, frame := range stack {
-				if len(frame.Variables) > 0 {
-					hasLocalVars = true
-					if frameIdx > 0 {
-						fmt.Fprintf(w, "    Frame %d:\n", frameIdx)
-					} else {
-						fmt.Fprint(w, "    Local variables:\n")
-					}
-
-					// Sort keys
-					keys := make([]string, 0, len(frame.Variables))
-					for k := range frame.Variables {
-						keys = append(keys, k)
-					}
-					sort.Strings(keys)
-
-					for _, k := range keys {
-						v := frame.Variables[k]
-						if frameIdx > 0 {
-							fmt.Fprintf(w, "      %s = %s\n", k, FormatValue(v))
-						} else {
-							fmt.Fprintf(w, "      %s = %s\n", k, FormatValue(v))
+					// If yielded, show the step name from top of stack
+					if pauseReason == Yield && len(currentFrame.Stack) > 0 {
+						topValue := currentFrame.Stack[len(currentFrame.Stack)-1]
+						if stepName, ok := topValue.(vm.StrValue); ok {
+							fmt.Fprintf(w, "    Step: %s\n", stepName)
 						}
 					}
 				}
-			}
 
-			if !hasLocalVars {
-				fmt.Fprint(w, "    (no local variables)\n")
+				// Show thread-local variables from all frames
+				hasLocalVars := false
+				for frameIdx, frame := range stack {
+					if len(frame.Variables) > 0 {
+						hasLocalVars = true
+						if frameIdx > 0 {
+							fmt.Fprintf(w, "    Frame %d:\n", frameIdx)
+						} else {
+							fmt.Fprint(w, "    Local variables:\n")
+						}
+
+						// Sort keys
+						keys := make([]string, 0, len(frame.Variables))
+						for k := range frame.Variables {
+							keys = append(keys, k)
+						}
+						sort.Strings(keys)
+
+						for _, k := range keys {
+							v := frame.Variables[k]
+							if frameIdx > 0 {
+								fmt.Fprintf(w, "      %s = %s\n", k, FormatValue(v))
+							} else {
+								fmt.Fprintf(w, "      %s = %s\n", k, FormatValue(v))
+							}
+						}
+					}
+				}
+
+				if !hasLocalVars {
+					fmt.Fprint(w, "    (no local variables)\n")
+				}
+
+				threadIdx++
 			}
 		}
 	}

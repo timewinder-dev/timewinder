@@ -251,34 +251,43 @@ func TestRoundTrip_State(t *testing.T) {
 			},
 			PC: vm.ExecPtr((0 << 32) | 0),
 		},
-		Stacks: []interp.StackFrames{
-			// Thread 0
+		ThreadSets: []interp.ThreadSet{
+			// Thread 0 in singleton set
 			{
-				&interp.StackFrame{
-					Stack: []vm.Value{
-						vm.IntValue(1),
-						vm.IntValue(2),
-					},
-					PC: vm.ExecPtr((1 << 32) | 5),
-					Variables: map[string]vm.Value{
-						"local": vm.StrValue("thread0"),
+				Stacks: []interp.StackFrames{
+					{
+						&interp.StackFrame{
+							Stack: []vm.Value{
+								vm.IntValue(1),
+								vm.IntValue(2),
+							},
+							PC: vm.ExecPtr((1 << 32) | 5),
+							Variables: map[string]vm.Value{
+								"local": vm.StrValue("thread0"),
+							},
+						},
 					},
 				},
+				PauseReason: []interp.Pause{interp.Start},
 			},
-			// Thread 1
+			// Thread 1 in singleton set
 			{
-				&interp.StackFrame{
-					Stack: []vm.Value{
-						vm.BoolTrue,
-					},
-					PC: vm.ExecPtr((2 << 32) | 10),
-					Variables: map[string]vm.Value{
-						"count": vm.IntValue(42),
+				Stacks: []interp.StackFrames{
+					{
+						&interp.StackFrame{
+							Stack: []vm.Value{
+								vm.BoolTrue,
+							},
+							PC: vm.ExecPtr((2 << 32) | 10),
+							Variables: map[string]vm.Value{
+								"count": vm.IntValue(42),
+							},
+						},
 					},
 				},
+				PauseReason: []interp.Pause{interp.Yield},
 			},
 		},
-		PauseReason: []interp.Pause{interp.Start, interp.Yield},
 	}
 
 	// Decompose
@@ -291,8 +300,8 @@ func TestRoundTrip_State(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify structure
-	assert.Equal(t, len(original.Stacks), len(result.Stacks))
-	assert.Equal(t, len(original.PauseReason), len(result.PauseReason))
+	assert.Equal(t, len(original.ThreadSets), len(result.ThreadSets))
+	assert.Equal(t, original.ThreadCount(), result.ThreadCount())
 
 	// Verify globals
 	assert.Equal(t, original.Globals.PC, result.Globals.PC)
@@ -304,22 +313,27 @@ func TestRoundTrip_State(t *testing.T) {
 		assert.Equal(t, 0, cmp)
 	}
 
-	// Verify each thread's stack
-	for threadIdx, origThread := range original.Stacks {
-		resultThread := result.Stacks[threadIdx]
-		assert.Equal(t, len(origThread), len(resultThread))
+	// Verify each thread set
+	for setIdx, origSet := range original.ThreadSets {
+		resultSet := result.ThreadSets[setIdx]
+		assert.Equal(t, len(origSet.Stacks), len(resultSet.Stacks))
+		assert.Equal(t, len(origSet.PauseReason), len(resultSet.PauseReason))
 
-		for frameIdx, origFrame := range origThread {
-			resultFrame := resultThread[frameIdx]
-			assert.Equal(t, origFrame.PC, resultFrame.PC)
-			assert.Equal(t, len(origFrame.Stack), len(resultFrame.Stack))
-			assert.Equal(t, len(origFrame.Variables), len(resultFrame.Variables))
+		// Verify each thread in the set
+		for localIdx, origThread := range origSet.Stacks {
+			resultThread := resultSet.Stacks[localIdx]
+			assert.Equal(t, len(origThread), len(resultThread))
+
+			for frameIdx, origFrame := range origThread {
+				resultFrame := resultThread[frameIdx]
+				assert.Equal(t, origFrame.PC, resultFrame.PC)
+				assert.Equal(t, len(origFrame.Stack), len(resultFrame.Stack))
+				assert.Equal(t, len(origFrame.Variables), len(resultFrame.Variables))
+			}
+
+			// Verify pause reason
+			assert.Equal(t, origSet.PauseReason[localIdx], resultSet.PauseReason[localIdx])
 		}
-	}
-
-	// Verify pause reasons
-	for i, pr := range original.PauseReason {
-		assert.Equal(t, pr, result.PauseReason[i])
 	}
 }
 
@@ -448,23 +462,32 @@ func TestCASEntryCount(t *testing.T) {
 				"g2": vm.IntValue(2),
 			},
 		},
-		Stacks: []interp.StackFrames{
+		ThreadSets: []interp.ThreadSet{
 			{
-				&interp.StackFrame{
-					Variables: map[string]vm.Value{
-						"t0v1": vm.IntValue(10),
+				Stacks: []interp.StackFrames{
+					{
+						&interp.StackFrame{
+							Variables: map[string]vm.Value{
+								"t0v1": vm.IntValue(10),
+							},
+						},
 					},
 				},
+				PauseReason: []interp.Pause{interp.Start},
 			},
 			{
-				&interp.StackFrame{
-					Variables: map[string]vm.Value{
-						"t1v1": vm.IntValue(20),
+				Stacks: []interp.StackFrames{
+					{
+						&interp.StackFrame{
+							Variables: map[string]vm.Value{
+								"t1v1": vm.IntValue(20),
+							},
+						},
 					},
 				},
+				PauseReason: []interp.Pause{interp.Start},
 			},
 		},
-		PauseReason: []interp.Pause{interp.Start, interp.Start},
 	}
 
 	// Decompose

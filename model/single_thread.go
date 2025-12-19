@@ -58,8 +58,19 @@ func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
 			}
 		}
 		for i := 0; i < len(exec.Threads); i++ {
+			// Convert flat index to ThreadID
+			threadID := interp.ThreadID{}
+			tmpIdx := i
+			for setIdx := range s.ThreadSets {
+				if tmpIdx < len(s.ThreadSets[setIdx].Stacks) {
+					threadID = interp.ThreadID{SetIdx: setIdx, LocalIdx: tmpIdx}
+					break
+				}
+				tmpIdx -= len(s.ThreadSets[setIdx].Stacks)
+			}
+
 			st.Queue = append(st.Queue, &Thunk{
-				ToRun: i,
+				ToRun: threadID,
 				State: s.Clone(),
 			})
 		}
@@ -159,11 +170,15 @@ func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) 
 	// Check for deadlock: no runnable threads but not all threads finished
 	if !s.Executor.NoDeadlocks {
 		allFinished := true
-		for i, reason := range st.PauseReason {
-			if reason != interp.Finished {
-				allFinished = false
-				fmt.Fprintf(s.Executor.DebugWriter, "  Thread %d (%s) is not finished: %v\n",
-					i, s.Executor.Threads[i], reason)
+		flatIdx := 0
+		for _, threadSet := range st.ThreadSets {
+			for _, reason := range threadSet.PauseReason {
+				if reason != interp.Finished {
+					allFinished = false
+					fmt.Fprintf(s.Executor.DebugWriter, "  Thread %d (%s) is not finished: %v\n",
+						flatIdx, s.Executor.Threads[flatIdx], reason)
+				}
+				flatIdx++
 			}
 		}
 
@@ -184,7 +199,7 @@ func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) 
 // This is skipped for WeaklyFairYield states (weak fairness assumption)
 func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*ModelResult, error) {
 	w := s.Executor.DebugWriter
-	threadPauseReason := st.PauseReason[t.ToRun]
+	threadPauseReason := st.GetPauseReason(t.ToRun)
 
 	// Check stutter for:
 	// - Yield (normal step())
@@ -198,16 +213,23 @@ func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*Mo
 		return nil, nil
 	}
 
+	// Compute flat thread index for logging
+	flatIdx := 0
+	for i := 0; i < t.ToRun.SetIdx; i++ {
+		flatIdx += len(st.ThreadSets[i].Stacks)
+	}
+	flatIdx += t.ToRun.LocalIdx
+
 	fmt.Fprintf(w, "Checking stutter for thread %d (%s) - as if process terminates here...\n",
-		t.ToRun, s.Executor.Threads[t.ToRun])
+		flatIdx, s.Executor.Threads[flatIdx])
 
 	// Clone the state and mark the thread as Stuttering for clarity in output
 	stutterState := st.Clone()
-	stutterState.PauseReason[t.ToRun] = interp.Stuttering
+	stutterState.SetPauseReason(t.ToRun, interp.Stuttering)
 
 	err := CheckTemporalConstraints(t, stutterState, s.Executor, false) // isCycle=false for stutter
 	if err != nil {
-		fmt.Fprintf(w, "⚠ Stutter check failed for thread %d: %s\n", t.ToRun, err.Error())
+		fmt.Fprintf(w, "⚠ Stutter check failed for thread %d: %s\n", flatIdx, err.Error())
 
 		// Get state hash for violation tracking (use stutter state)
 		stateHash, hashErr := s.Executor.CAS.Put(stutterState)
@@ -215,18 +237,25 @@ func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*Mo
 			stateHash = 0
 		}
 
+		// Convert ThreadID to flat index
+		threadFlatIdx := 0
+		for i := 0; i < t.ToRun.SetIdx; i++ {
+			threadFlatIdx += len(stutterState.ThreadSets[i].Stacks)
+		}
+		threadFlatIdx += t.ToRun.LocalIdx
+
 		violation := PropertyViolation{
 			PropertyName: "Stutter Check",
 			Message: fmt.Sprintf("Stutter check failed at thread %d (%s): %s",
-				t.ToRun, s.Executor.Threads[t.ToRun], err.Error()),
+				threadFlatIdx, s.Executor.Threads[threadFlatIdx], err.Error()),
 			StateHash:   stateHash,
 			Depth:       s.depth,
 			StateNumber: s.stateCount,
 			Trace:       t.Trace,
 			State:       stutterState, // Use stutter state to show [Stuttering] in output
 			Program:     s.Executor.Program,
-			ThreadID:    t.ToRun,
-			ThreadName:  s.Executor.Threads[t.ToRun],
+			ThreadID:    threadFlatIdx,
+			ThreadName:  s.Executor.Threads[threadFlatIdx],
 			ShowDetails: s.Executor.ShowDetails,
 			CAS:         s.Executor.CAS,
 		}
@@ -257,6 +286,13 @@ func (s *SingleThreadEngine) handlePropertyViolation(t *Thunk, st *interp.State,
 		stateHash = 0 // Use 0 if hashing fails
 	}
 
+	// Convert ThreadID to flat index
+	threadFlatIdx := 0
+	for i := 0; i < t.ToRun.SetIdx; i++ {
+		threadFlatIdx += len(st.ThreadSets[i].Stacks)
+	}
+	threadFlatIdx += t.ToRun.LocalIdx
+
 	violation := PropertyViolation{
 		PropertyName: "Property", // Will be updated by CheckProperties
 		Message:      err.Error(),
@@ -266,8 +302,8 @@ func (s *SingleThreadEngine) handlePropertyViolation(t *Thunk, st *interp.State,
 		Trace:        t.Trace,
 		State:        st,
 		Program:      s.Executor.Program,
-		ThreadID:     t.ToRun,
-		ThreadName:   s.Executor.Threads[t.ToRun],
+		ThreadID:     threadFlatIdx,
+		ThreadName:   s.Executor.Threads[threadFlatIdx],
 		ShowDetails:  s.Executor.ShowDetails,
 		CAS:          s.Executor.CAS,
 	}
@@ -310,8 +346,15 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 			s.Queue = s.Queue[1:]
 			s.stateCount++
 
-			fmt.Fprintf(w, "\n--- State #%d: Running thread %d (%s) ---\n",
-				s.stateCount, t.ToRun, s.Executor.Threads[t.ToRun])
+			// Convert ThreadID to flat index for display
+			threadFlatIdx := 0
+			for i := 0; i < t.ToRun.SetIdx; i++ {
+				threadFlatIdx += len(t.State.ThreadSets[i].Stacks)
+			}
+			threadFlatIdx += t.ToRun.LocalIdx
+
+			fmt.Fprintf(w, "\n--- State #%d: Running thread %d (Set %d, Local %d) %s ---\n",
+				s.stateCount, threadFlatIdx, t.ToRun.SetIdx, t.ToRun.LocalIdx, s.Executor.Threads[threadFlatIdx])
 			fmt.Fprintf(w, "Trace so far: %d steps\n", len(t.Trace))
 
 			// Execute thread
@@ -327,7 +370,7 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 					successor := t.Clone()
 					successor.State = st.Clone()
 					// Push the concrete choice onto the stack
-					currentFrame := successor.State.Stacks[t.ToRun].CurrentStack()
+					currentFrame := successor.State.GetStackFrames(t.ToRun).CurrentStack()
 					currentFrame.Push(choice)
 					// Add to current queue for immediate processing
 					s.Queue = append(s.Queue, successor)
@@ -338,7 +381,12 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 
 			b, _ := json.Marshal(st)
 			fmt.Fprintf(w, "After execution:\n%s\n", string(b))
-			fmt.Fprintf(w, "Pause reasons: %v\n", st.PauseReason)
+			// Flatten pause reasons for display
+			var pauseReasons []interp.Pause
+			for _, threadSet := range st.ThreadSets {
+				pauseReasons = append(pauseReasons, threadSet.PauseReason...)
+			}
+			fmt.Fprintf(w, "Pause reasons: %v\n", pauseReasons)
 
 			// Check for cycles BEFORE generating successors
 			stateHash, err := s.Executor.CAS.Put(st)

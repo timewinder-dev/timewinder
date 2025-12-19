@@ -257,34 +257,43 @@ func TestCAS_StateWithThreads(t *testing.T) {
 				"shared": vm.IntValue(0),
 			},
 		},
-		Stacks: []interp.StackFrames{
-			// Thread 0
+		ThreadSets: []interp.ThreadSet{
+			// Thread 0 in singleton set
 			{
-				&interp.StackFrame{
-					PC: vm.ExecPtr((1 << 32) | 10),
-					Variables: map[string]vm.Value{
-						"local0": vm.StrValue("thread0"),
-					},
-					Stack: []vm.Value{
-						vm.IntValue(1),
-						vm.IntValue(2),
+				Stacks: []interp.StackFrames{
+					{
+						&interp.StackFrame{
+							PC: vm.ExecPtr((1 << 32) | 10),
+							Variables: map[string]vm.Value{
+								"local0": vm.StrValue("thread0"),
+							},
+							Stack: []vm.Value{
+								vm.IntValue(1),
+								vm.IntValue(2),
+							},
+						},
 					},
 				},
+				PauseReason: []interp.Pause{interp.Yield},
 			},
-			// Thread 1
+			// Thread 1 in singleton set
 			{
-				&interp.StackFrame{
-					PC: vm.ExecPtr((2 << 32) | 20),
-					Variables: map[string]vm.Value{
-						"local1": vm.StrValue("thread1"),
-					},
-					Stack: []vm.Value{
-						vm.BoolTrue,
+				Stacks: []interp.StackFrames{
+					{
+						&interp.StackFrame{
+							PC: vm.ExecPtr((2 << 32) | 20),
+							Variables: map[string]vm.Value{
+								"local1": vm.StrValue("thread1"),
+							},
+							Stack: []vm.Value{
+								vm.BoolTrue,
+							},
+						},
 					},
 				},
+				PauseReason: []interp.Pause{interp.Start},
 			},
 		},
-		PauseReason: []interp.Pause{interp.Yield, interp.Start},
 	}
 
 	// Test round-trip
@@ -295,24 +304,24 @@ func TestCAS_StateWithThreads(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify structure
-	assert.Equal(t, 2, len(recovered.Stacks))
-	assert.Equal(t, 2, len(recovered.PauseReason))
+	assert.Equal(t, 2, recovered.ThreadCount())
+	assert.Equal(t, 2, len(recovered.ThreadSets))
 
-	// Verify thread 0
-	thread0 := recovered.Stacks[0][0]
-	assert.Equal(t, vm.ExecPtr((1 << 32) | 10), thread0.PC)
+	// Verify thread 0 (first ThreadSet)
+	thread0 := recovered.ThreadSets[0].Stacks[0][0]
+	assert.Equal(t, vm.ExecPtr((1<<32)|10), thread0.PC)
 	assert.Equal(t, vm.StrValue("thread0"), thread0.Variables["local0"])
 	assert.Equal(t, 2, len(thread0.Stack))
 
-	// Verify thread 1
-	thread1 := recovered.Stacks[1][0]
-	assert.Equal(t, vm.ExecPtr((2 << 32) | 20), thread1.PC)
+	// Verify thread 1 (second ThreadSet)
+	thread1 := recovered.ThreadSets[1].Stacks[0][0]
+	assert.Equal(t, vm.ExecPtr((2<<32)|20), thread1.PC)
 	assert.Equal(t, vm.StrValue("thread1"), thread1.Variables["local1"])
 	assert.Equal(t, 1, len(thread1.Stack))
 
 	// Verify pause reasons
-	assert.Equal(t, interp.Yield, recovered.PauseReason[0])
-	assert.Equal(t, interp.Start, recovered.PauseReason[1])
+	assert.Equal(t, interp.Yield, recovered.ThreadSets[0].PauseReason[0])
+	assert.Equal(t, interp.Start, recovered.ThreadSets[1].PauseReason[0])
 }
 
 // TestCAS_StateEvolution tests storing states as program evolves

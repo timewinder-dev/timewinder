@@ -14,12 +14,39 @@ const (
 	MinArraySizeForRef  = 5 // Arrays with 5+ elements use hash references
 )
 
+// ThreadInstanceRef represents a single thread within a ThreadSet
+type ThreadInstanceRef struct {
+	StacksHashes []Hash        // Hash for each StackFrame in this thread's call stack
+	PauseReason  interp.Pause  // Why this thread is paused
+}
+
+func (t *ThreadInstanceRef) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, t)
+}
+
+func (t *ThreadInstanceRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, t)
+}
+
+// ThreadSetRef represents a set of symmetric (interchangeable) threads
+// Threads within the set are SORTED by hash for canonicalization
+type ThreadSetRef struct {
+	Threads []ThreadInstanceRef // Threads in this set (sorted by hash)
+}
+
+func (t *ThreadSetRef) Serialize(w io.Writer) error {
+	return msgpack.MarshalWrite(w, t)
+}
+
+func (t *ThreadSetRef) Deserialize(r io.Reader) error {
+	return msgpack.UnmarshalRead(r, t)
+}
+
 // StateRef is the internal CAS representation of interp.State
 // Instead of storing nested structures inline, it stores hashes that reference them
 type StateRef struct {
-	GlobalsHash  Hash     // Hash of the global StackFrame
-	StacksHashes [][]Hash // For each thread, array of StackFrame hashes
-	PauseReasons []interp.Pause
+	GlobalsHash Hash           // Hash of the global StackFrame
+	ThreadSets  []ThreadSetRef // Groups of symmetric threads
 }
 
 func (s *StateRef) Serialize(w io.Writer) error {
