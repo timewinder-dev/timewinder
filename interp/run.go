@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"github.com/rs/zerolog/log"
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
@@ -49,6 +50,7 @@ func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value
 }
 
 func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error) {
+	log.Trace().Interface("thread", thread).Msg("RunToPause: starting thread execution")
 	threadStack := s.GetStackFrames(thread)
 
 	// Helper to save threadStack back to state
@@ -57,24 +59,33 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 	}
 	defer saveStack() // Always save on return
 
+	stepCount := 0
 	for {
+		stepCount++
 		res, n, err := Step(prog, s.Globals, threadStack)
 		if err != nil {
+			log.Trace().Interface("thread", thread).Int("step", stepCount).Err(err).Msg("RunToPause: step error")
 			return nil, err
 		}
+
+		log.Trace().Interface("thread", thread).Int("step", stepCount).Str("result", resultToString(res)).Int("n", n).Msg("RunToPause: step result")
+
 		switch res {
 		case ReturnStep:
 			if len(threadStack) == 1 {
+				log.Trace().Interface("thread", thread).Msg("RunToPause: thread finished")
 				s.SetPauseReason(thread, Finished)
 				return nil, nil
 			}
 			f := threadStack.PopStack()
 			val := f.Pop()
 			threadStack.CurrentStack().Push(val)
+			log.Trace().Interface("thread", thread).Interface("return_value", val).Int("stack_depth", len(threadStack)).Msg("RunToPause: function returned")
 		case CallStep:
 			currentFrame := threadStack.CurrentStack()
 			f, err := BuildCallFrame(prog, currentFrame, n)
 			if err != nil {
+				log.Trace().Interface("thread", thread).Err(err).Msg("RunToPause: call error")
 				return nil, err
 			}
 
@@ -84,6 +95,7 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 				if nonDet, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.NonDetValue); ok {
 					// Pop the NonDetValue from stack
 					currentFrame.Pop()
+					log.Trace().Interface("thread", thread).Interface("choices", nonDet.Choices).Msg("RunToPause: non-deterministic choice")
 					s.SetPauseReason(thread, NonDet)
 					return nonDet.Choices, nil
 				}
@@ -93,32 +105,59 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 			if f != nil {
 				currentFrame.PC = currentFrame.PC.Inc()
 				threadStack.Append(f)
+				log.Trace().Interface("thread", thread).Int("stack_depth", len(threadStack)).Msg("RunToPause: pushed call frame")
 			}
 		case ContinueStep:
 			continue
 		case EndStep:
 			if len(threadStack) == 1 {
+				log.Trace().Interface("thread", thread).Msg("RunToPause: thread finished (end)")
 				s.SetPauseReason(thread, Finished)
 				return nil, nil
 			}
 			// Function ended without explicit return - pop frame and push None
 			threadStack.PopStack()
 			threadStack.CurrentStack().Push(vm.None)
+			log.Trace().Interface("thread", thread).Int("stack_depth", len(threadStack)).Msg("RunToPause: function ended without return")
 		case YieldStep:
-			// Check yield type to set appropriate PauseReason
+			// Check yield type to set appropriate pause reason
+			var pause Pause
 			switch YieldType(n) {
 			case YieldWaiting:
-				s.SetPauseReason(thread, Waiting)
+				pause = Waiting
 			case YieldWeaklyFairWaiting:
-				s.SetPauseReason(thread, WeaklyFairWaiting)
+				pause = WeaklyFairWaiting
 			case YieldWeaklyFair:
-				s.SetPauseReason(thread, WeaklyFairYield)
+				pause = WeaklyFairYield
 			default:
-				s.SetPauseReason(thread, Yield)
+				pause = Yield
 			}
+			log.Trace().Interface("thread", thread).Str("pause", pause.String()).Msg("RunToPause: thread yielded")
+			s.SetPauseReason(thread, pause)
 			return nil, nil
 		default:
 			panic("unhandled intermediate step")
 		}
+	}
+}
+
+func resultToString(res StepResult) string {
+	switch res {
+	case ContinueStep:
+		return "Continue"
+	case ReturnStep:
+		return "Return"
+	case EndStep:
+		return "End"
+	case CallStep:
+		return "Call"
+	case ErrorStep:
+		return "Error"
+	case YieldStep:
+		return "Yield"
+	case NonDetStep:
+		return "NonDet"
+	default:
+		return "Unknown"
 	}
 }

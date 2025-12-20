@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/rs/zerolog/log"
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
@@ -51,6 +52,7 @@ func FunctionCallFromString(prog *vm.Program, globals *StackFrame, callString st
 
 func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, error) {
 	if len(frame.Stack) < n+1 {
+		log.Trace().Int("argc", n).Int("stack_len", len(frame.Stack)).Msg("BuildCallFrame: stack too short")
 		return nil, fmt.Errorf("Call stack is too short to buildCallFrame: need %d items, have %d", n+1, len(frame.Stack))
 	}
 
@@ -60,6 +62,7 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 		// Look up builtin implementation from registry
 		impl, exists := vm.BuiltinRegistry[builtinVal.Name]
 		if !exists {
+			log.Trace().Str("builtin", builtinVal.Name).Msg("BuildCallFrame: unknown builtin")
 			return nil, fmt.Errorf("unknown builtin function: %s", builtinVal.Name)
 		}
 
@@ -73,11 +76,16 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 			args[i] = argVal.Value
 		}
 
+		log.Trace().Str("builtin", builtinVal.Name).Interface("args", args).Msg("BuildCallFrame: calling builtin")
+
 		// Call the builtin implementation
 		result, err := impl(args)
 		if err != nil {
+			log.Trace().Str("builtin", builtinVal.Name).Err(err).Msg("BuildCallFrame: builtin error")
 			return nil, err
 		}
+
+		log.Trace().Str("builtin", builtinVal.Name).Interface("result", result).Msg("BuildCallFrame: builtin returned")
 
 		// Always push result to stack and increment PC
 		// NonDetValue will be handled by RunToPause if in execution context
@@ -90,6 +98,7 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 	// Regular function call - must be FnPtrValue
 	fnPtr, ok := fnVal.(vm.FnPtrValue)
 	if !ok {
+		log.Trace().Interface("fn_val", fnVal).Msg("BuildCallFrame: non-callable value")
 		return nil, fmt.Errorf("Compiler error: stack contains non-callable value on call (got %T: %v)", fnVal, fnVal)
 	}
 	ptr := vm.ExecPtr(fnPtr)
@@ -100,11 +109,14 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 			return nil, fmt.Errorf("Compiler error: stack contains non-call arguments")
 		}
 	}
+
+	fn := prog.Code[ptr.CodeID()-1]
+	log.Trace().Str("pc", ptr.String()).Int("argc", n).Interface("args", args).Msg("BuildCallFrame: calling function")
+
 	newFrame := &StackFrame{
 		PC:    ptr,
 		Stack: []vm.Value{},
 	}
-	fn := prog.Code[ptr.CodeID()-1]
 	for _, p := range fn.Params {
 		found := false
 		for i, a := range args {
@@ -127,8 +139,11 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 		if p.Default != nil {
 			newFrame.StoreVar(p.Name, p.Default)
 		} else {
+			log.Trace().Str("pc", ptr.String()).Str("param", p.Name).Msg("BuildCallFrame: missing required argument")
 			return nil, fmt.Errorf("Not enough arguments to call")
 		}
 	}
+
+	log.Trace().Str("pc", ptr.String()).Interface("variables", newFrame.Variables).Msg("BuildCallFrame: created call frame")
 	return newFrame, nil
 }

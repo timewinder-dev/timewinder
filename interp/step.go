@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/rs/zerolog/log"
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
@@ -37,22 +38,37 @@ type Program interface {
 
 func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult, int, error) {
 	if len(stack) == 0 {
+		log.Trace().Msg("Step: empty stack, returning error")
 		return ErrorStep, 0, errors.New("No stack frame")
 	}
 	frame := stack[len(stack)-1]
 	inst, err := program.GetInstruction(frame.PC)
 	if err != nil {
 		if errors.Is(err, vm.ErrEndOfCode) {
+			log.Trace().Str("pc", frame.PC.String()).Msg("Step: end of code")
 			return EndStep, 0, nil
 		}
+		log.Trace().Err(err).Str("pc", frame.PC.String()).Msg("Step: error getting instruction")
 		return ErrorStep, 0, err
 	}
+
+	log.Trace().
+		Str("opcode", inst.Code.String()).
+		Str("pc", frame.PC.String()).
+		Interface("arg", inst.Arg).
+		Int("stack_depth", len(frame.Stack)).
+		Interface("stack", frame.Stack).
+		Msg("Step: executing instruction")
+
 	switch inst.Code {
 	case vm.NOP:
+		log.Trace().Interface("stack", frame.Stack).Msg("  NOP")
 	case vm.POP:
-		frame.Pop()
+		val := frame.Pop()
+		log.Trace().Interface("value", val).Interface("stack", frame.Stack).Msg("  POP")
 	case vm.PUSH:
 		frame.Push(inst.Arg.Clone())
+		log.Trace().Interface("value", inst.Arg).Interface("stack", frame.Stack).Msg("  PUSH")
 	case vm.SETVAL:
 		name := frame.Pop()
 		val := frame.Pop()
@@ -72,31 +88,39 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		if !saved {
 			frame.StoreVar(variable, val)
 		}
+		log.Trace().Str("variable", variable).Interface("value", val).Interface("stack", frame.Stack).Msg("  SETVAL")
 	case vm.GETVAL:
 		name := frame.Pop()
-		v, err := resolveVar(mustString(name), program, globals, stack)
+		varName := mustString(name)
+		v, err := resolveVar(varName, program, globals, stack)
 		if err != nil {
+			log.Trace().Str("variable", varName).Err(err).Interface("stack", frame.Stack).Msg("  GETVAL: error")
 			return ErrorStep, 0, err
 		}
 		frame.Push(v)
+		log.Trace().Str("variable", varName).Interface("value", v).Interface("stack", frame.Stack).Msg("  GETVAL")
 	case vm.SWAP:
 		a := frame.Pop()
 		b := frame.Pop()
 		frame.Push(a)
 		frame.Push(b)
+		log.Trace().Interface("stack", frame.Stack).Msg("  SWAP")
 	case vm.DUP:
 		a := frame.Pop()
 		frame.Push(a.Clone())
 		frame.Push(a)
+		log.Trace().Interface("value", a).Interface("stack", frame.Stack).Msg("  DUP")
 	case vm.GETATTR:
 		// Stack: A B -> C where C = A[B]
 		key := frame.Pop()
 		obj := frame.Pop()
 		val, err := getAttribute(obj, key)
 		if err != nil {
+			log.Trace().Interface("obj", obj).Interface("key", key).Err(err).Msg("  GETATTR: error")
 			return ErrorStep, 0, err
 		}
 		frame.Push(val)
+		log.Trace().Interface("obj", obj).Interface("key", key).Interface("value", val).Interface("stack", frame.Stack).Msg("  GETATTR")
 	case vm.SETATTR:
 		// Stack: C A B -> nothing, sets A[B] = C
 		key := frame.Pop()
@@ -104,20 +128,25 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		val := frame.Pop()
 		err := setAttribute(obj, key, val)
 		if err != nil {
+			log.Trace().Interface("obj", obj).Interface("key", key).Interface("value", val).Err(err).Msg("  SETATTR: error")
 			return ErrorStep, 0, err
 		}
+		log.Trace().Interface("obj", obj).Interface("key", key).Interface("value", val).Interface("stack", frame.Stack).Msg("  SETATTR")
 	case vm.NOT:
 		a := frame.Pop()
 		new := !a.AsBool()
 		frame.Push(vm.BoolValue(new))
+		log.Trace().Interface("input", a).Bool("result", new).Interface("stack", frame.Stack).Msg("  NOT")
 	case vm.ADD:
 		b := frame.Pop()
 		a := frame.Pop()
 		v, err := add(a, b)
 		if err != nil {
+			log.Trace().Interface("a", a).Interface("b", b).Err(err).Msg("  ADD: error")
 			return ErrorStep, 0, err
 		}
 		frame.Push(v)
+		log.Trace().Interface("a", a).Interface("b", b).Interface("result", v).Interface("stack", frame.Stack).Msg("  ADD")
 	case vm.MULTIPLY:
 		fallthrough
 	case vm.DIVIDE:
@@ -127,47 +156,61 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		a := frame.Pop()
 		v, err := numericOp(inst.Code, a, b)
 		if err != nil {
+			log.Trace().Str("op", inst.Code.String()).Interface("a", a).Interface("b", b).Err(err).Msg("  NUMERIC_OP: error")
 			return ErrorStep, 0, err
 		}
 		frame.Push(v)
+		log.Trace().Str("op", inst.Code.String()).Interface("a", a).Interface("b", b).Interface("result", v).Interface("stack", frame.Stack).Msg("  NUMERIC_OP")
 	case vm.EQ:
 		b := frame.Pop()
 		a := frame.Pop()
 		v, ok := a.Cmp(b)
+		var result vm.Value
 		if !ok {
 			// Not comparable, therefore not equal
-			frame.Push(vm.BoolFalse)
+			result = vm.BoolFalse
+			frame.Push(result)
 		} else {
 			if v == 0 {
-				frame.Push(vm.BoolTrue)
+				result = vm.BoolTrue
 			} else {
-				frame.Push(vm.BoolFalse)
+				result = vm.BoolFalse
 			}
+			frame.Push(result)
 		}
+		log.Trace().Interface("a", a).Interface("b", b).Interface("result", result).Interface("stack", frame.Stack).Msg("  EQ")
 	case vm.LT:
 		b := frame.Pop()
 		a := frame.Pop()
 		v, ok := a.Cmp(b)
 		if !ok {
+			log.Trace().Interface("a", a).Interface("b", b).Msg("  LT: incomparable types")
 			return ErrorStep, 0, fmt.Errorf("Can't compare %#v to %#v", a, b)
 		}
+		var result vm.Value
 		if v < 0 {
-			frame.Push(vm.BoolTrue)
+			result = vm.BoolTrue
 		} else {
-			frame.Push(vm.BoolFalse)
+			result = vm.BoolFalse
 		}
+		frame.Push(result)
+		log.Trace().Interface("a", a).Interface("b", b).Interface("result", result).Interface("stack", frame.Stack).Msg("  LT")
 	case vm.LTE:
 		b := frame.Pop()
 		a := frame.Pop()
 		v, ok := a.Cmp(b)
 		if !ok {
+			log.Trace().Interface("a", a).Interface("b", b).Msg("  LTE: incomparable types")
 			return ErrorStep, 0, fmt.Errorf("Can't compare %#v to %#v", a, b)
 		}
+		var result vm.Value
 		if v <= 0 {
-			frame.Push(vm.BoolTrue)
+			result = vm.BoolTrue
 		} else {
-			frame.Push(vm.BoolFalse)
+			result = vm.BoolFalse
 		}
+		frame.Push(result)
+		log.Trace().Interface("a", a).Interface("b", b).Interface("result", result).Interface("stack", frame.Stack).Msg("  LTE")
 	case vm.SLICE:
 		// Stack: Array Start End -> Result
 		// None for start means 0, None for end means len(array)
@@ -228,22 +271,29 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	case vm.JMP:
 		// Unconditional jump to label
 		if label, ok := inst.Arg.(vm.IntValue); ok {
-			frame.PC = frame.PC.SetOffset(int(label))
+			newPC := frame.PC.SetOffset(int(label))
+			log.Trace().Str("from", frame.PC.String()).Str("to", newPC.String()).Interface("stack", frame.Stack).Msg("  JMP")
+			frame.PC = newPC
 			return ContinueStep, 0, nil
 		}
 		return ErrorStep, 0, fmt.Errorf("JMP requires integer label")
 	case vm.JFALSE:
 		// Jump to label if top of stack is false
 		cond := frame.Pop()
-		if !cond.AsBool() {
+		condBool := cond.AsBool()
+		if !condBool {
 			if label, ok := inst.Arg.(vm.IntValue); ok {
-				frame.PC = frame.PC.SetOffset(int(label))
+				newPC := frame.PC.SetOffset(int(label))
+				log.Trace().Interface("condition", cond).Bool("cond_bool", condBool).Str("from", frame.PC.String()).Str("to", newPC.String()).Interface("stack", frame.Stack).Msg("  JFALSE: jumping")
+				frame.PC = newPC
 				return ContinueStep, 0, nil
 			}
 			return ErrorStep, 0, fmt.Errorf("JFALSE requires integer label")
 		}
 		// Fall through - don't jump, just continue
+		log.Trace().Interface("condition", cond).Bool("cond_bool", condBool).Interface("stack", frame.Stack).Msg("  JFALSE: not jumping")
 	case vm.RETURN:
+		log.Trace().Interface("stack", frame.Stack).Msg("  RETURN")
 		return ReturnStep, 0, nil
 	case vm.BUILD_LIST:
 		n, ok := inst.Arg.(vm.IntValue)
@@ -255,6 +305,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			l[i] = frame.Pop()
 		}
 		frame.Push(vm.ArrayValue(l))
+		log.Trace().Int("size", int(n)).Interface("list", l).Interface("stack", frame.Stack).Msg("  BUILD_LIST")
 	case vm.BUILD_DICT:
 		n, ok := inst.Arg.(vm.IntValue)
 		if !ok {
@@ -273,16 +324,22 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			}
 		}
 		frame.Push(vm.StructValue(l))
+		log.Trace().Int("size", int(n)).Interface("dict", l).Interface("stack", frame.Stack).Msg("  BUILD_DICT")
 	case vm.BUILD_ARG:
 		name := frame.Pop()
 		val := frame.Pop()
+		var arg vm.ArgValue
 		if _, ok := name.Cmp(vm.None); ok {
-			frame.Push(vm.ArgValue{Value: val})
+			arg = vm.ArgValue{Value: val}
+			frame.Push(arg)
 		} else {
-			frame.Push(vm.ArgValue{Key: mustString(name), Value: val})
+			arg = vm.ArgValue{Key: mustString(name), Value: val}
+			frame.Push(arg)
 		}
+		log.Trace().Interface("name", name).Interface("value", val).Interface("arg", arg).Interface("stack", frame.Stack).Msg("  BUILD_ARG")
 	case vm.CALL:
 		if v, ok := inst.Arg.(vm.IntValue); ok {
+			log.Trace().Int("argc", int(v)).Interface("stack", frame.Stack).Str("pc", frame.PC.String()).Msg("  CALL")
 			return CallStep, int(v), nil
 		} else {
 			return ErrorStep, 0, fmt.Errorf("Error in compilation; CALL should carry an int")
@@ -291,13 +348,17 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		// Yield execution to allow other threads to run
 		// The step name (inst.Arg) should already be on the stack from compilation
 		// (step() compiles to PUSH <name>, YIELD <name>)
-		frame.PC = frame.PC.Inc()
+		newPC := frame.PC.Inc()
+		log.Trace().Str("pc", frame.PC.String()).Str("new_pc", newPC.String()).Interface("stack", frame.Stack).Msg("  YIELD: yielding to scheduler")
+		frame.PC = newPC
 		return YieldStep, int(YieldNormal), nil
 	case vm.FAIR_YIELD:
 		// Weakly fair yield - similar to YIELD but marks as WeaklyFairYield
 		// This prevents stutter checking at this point
 		// The step name should already be on the stack from compilation
-		frame.PC = frame.PC.Inc()
+		newPC := frame.PC.Inc()
+		log.Trace().Str("pc", frame.PC.String()).Str("new_pc", newPC.String()).Interface("stack", frame.Stack).Msg("  FAIR_YIELD: yielding (weakly fair)")
+		frame.PC = newPC
 		return YieldStep, int(YieldWeaklyFair), nil
 	case vm.CONDITIONAL_YIELD:
 		// Pop condition result from stack
@@ -307,21 +368,25 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			return ErrorStep, 0, fmt.Errorf("CONDITIONAL_YIELD requires integer offset")
 		}
 
-		frame.PC = frame.PC.Inc()
+		newPC := frame.PC.Inc()
+		frame.PC = newPC
 
 		if condResult.AsBool() {
 			// Condition satisfied - ALWAYS yield (to allow interleaving)
 			// but thread is immediately runnable
 			frame.WaitCondition = nil
+			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_YIELD: condition satisfied, yielding")
 			return YieldStep, 0, nil // Normal yield - thread is runnable
 		}
 
 		// Condition false - yield and mark as waiting
 		// Thread won't be runnable until condition becomes true
+		condPC := frame.PC.SetOffset(int(retryOffset))
 		frame.WaitCondition = &WaitConditionInfo{
-			ConditionPC:  frame.PC.SetOffset(int(retryOffset)),
+			ConditionPC:  condPC,
 			IsWeaklyFair: false,
 		}
+		log.Trace().Bool("condition", false).Str("pc", newPC.String()).Str("retry_pc", condPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_YIELD: waiting for condition")
 		return YieldStep, int(YieldWaiting), nil
 	case vm.CONDITIONAL_FAIR_YIELD:
 		// Pop condition result from stack
@@ -331,21 +396,25 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			return ErrorStep, 0, fmt.Errorf("CONDITIONAL_FAIR_YIELD requires integer offset")
 		}
 
-		frame.PC = frame.PC.Inc()
+		newPC := frame.PC.Inc()
+		frame.PC = newPC
 
 		if condResult.AsBool() {
 			// Condition satisfied - ALWAYS yield (to allow interleaving)
 			// but thread is immediately runnable (no stutter checking)
 			frame.WaitCondition = nil
+			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_FAIR_YIELD: condition satisfied, yielding (weakly fair)")
 			return YieldStep, int(YieldWeaklyFair), nil // Weakly fair yield
 		}
 
 		// Condition false - yield and mark as weakly fair waiting
 		// Thread won't be runnable until condition becomes true
+		condPC := frame.PC.SetOffset(int(retryOffset))
 		frame.WaitCondition = &WaitConditionInfo{
-			ConditionPC:  frame.PC.SetOffset(int(retryOffset)),
+			ConditionPC:  condPC,
 			IsWeaklyFair: true,
 		}
+		log.Trace().Bool("condition", false).Str("pc", newPC.String()).Str("retry_pc", condPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_FAIR_YIELD: waiting for condition (weakly fair)")
 		return YieldStep, int(YieldWeaklyFairWaiting), nil
 	case vm.ITER_START:
 		// Pop the iterable from stack
@@ -379,6 +448,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 				VarCount: 1,
 			}
 		default:
+			log.Trace().Interface("iterable", iterable).Msg("  ITER_START: cannot iterate")
 			return ErrorStep, 0, fmt.Errorf("Cannot iterate over %T", iterable)
 		}
 
@@ -399,11 +469,14 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			// Empty iterable, jump to end immediately
 			frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
 			frame.PC = endLabel
+			log.Trace().Str("var", varNameStr).Interface("iterable", iterable).Str("end_pc", endLabel.String()).Msg("  ITER_START: empty iterable, jumping to end")
 			return ContinueStep, 0, nil
 		}
 
 		// Set loop variable and continue to loop body (PC will auto-increment)
-		frame.StoreVar(varNameStr, iter.Var1())
+		firstVal := iter.Var1()
+		frame.StoreVar(varNameStr, firstVal)
+		log.Trace().Str("var", varNameStr).Interface("iterable", iterable).Interface("first_value", firstVal).Str("start_pc", iterState.Start.String()).Str("end_pc", endLabel.String()).Msg("  ITER_START: starting iteration")
 	case vm.ITER_START_2:
 		// Pop iterable (top of stack)
 		iterable := frame.Pop()
@@ -462,6 +535,7 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	case vm.ITER_NEXT:
 		// Get current iterator from top of stack
 		if len(frame.IteratorStack) == 0 {
+			log.Trace().Msg("  ITER_NEXT: empty iterator stack")
 			return ErrorStep, 0, fmt.Errorf("ITER_NEXT with empty iterator stack")
 		}
 
@@ -473,14 +547,20 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			// Iterator exhausted, pop it and exit loop
 			frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
 			frame.PC = iterState.End
+			log.Trace().Str("end_pc", iterState.End.String()).Msg("  ITER_NEXT: exhausted, exiting loop")
 			return ContinueStep, 0, nil
 		}
 		// More elements, update loop variables and jump back to loop start
 		if len(iterState.VarNames) == 1 {
-			frame.StoreVar(iterState.VarNames[0], iter.Var1())
+			val := iter.Var1()
+			frame.StoreVar(iterState.VarNames[0], val)
+			log.Trace().Str("var", iterState.VarNames[0]).Interface("value", val).Str("start_pc", iterState.Start.String()).Msg("  ITER_NEXT: continuing iteration")
 		} else if len(iterState.VarNames) == 2 {
-			frame.StoreVar(iterState.VarNames[0], iter.Var1())
-			frame.StoreVar(iterState.VarNames[1], iter.Var2())
+			val1 := iter.Var1()
+			val2 := iter.Var2()
+			frame.StoreVar(iterState.VarNames[0], val1)
+			frame.StoreVar(iterState.VarNames[1], val2)
+			log.Trace().Str("var1", iterState.VarNames[0]).Interface("value1", val1).Str("var2", iterState.VarNames[1]).Interface("value2", val2).Str("start_pc", iterState.Start.String()).Msg("  ITER_NEXT: continuing iteration")
 		}
 		frame.PC = iterState.Start
 
@@ -488,12 +568,14 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	case vm.ITER_END:
 		// Pop current iterator and jump to end
 		if len(frame.IteratorStack) == 0 {
+			log.Trace().Msg("  ITER_END: empty iterator stack")
 			return ErrorStep, 0, fmt.Errorf("ITER_END with empty iterator stack")
 		}
 
 		iterState := frame.IteratorStack[len(frame.IteratorStack)-1]
 		frame.IteratorStack = frame.IteratorStack[:len(frame.IteratorStack)-1]
 		frame.PC = iterState.End
+		log.Trace().Str("end_pc", iterState.End.String()).Msg("  ITER_END: breaking from loop")
 
 		return ContinueStep, 0, nil
 	default:
