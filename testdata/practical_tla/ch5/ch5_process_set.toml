@@ -1,0 +1,12 @@
+[spec]
+expected_error = "Deadlock"
+
+[threads.reader]
+replicas = 2
+entrypoint = "reader()"
+
+[threads.writer]
+entrypoint = "writer()"
+
+[properties]
+BoundedQueue = {Always = "bounded"}
