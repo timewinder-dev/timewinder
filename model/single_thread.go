@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gookit/color"
+	"github.com/rs/zerolog/log"
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 )
@@ -358,10 +359,26 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 			fmt.Fprintf(w, "Trace so far: %d steps\n", len(t.Trace))
 
 			// Execute thread
+			log.Trace().
+				Interface("thread", t.ToRun).
+				Str("pause_reason_before", t.State.GetPauseReason(t.ToRun).String()).
+				Interface("queue_before", t.State.Globals.Variables["queue"]).
+				Msg("RunModel: about to execute thread")
+
 			st, choices, err := RunTrace(t, s.Executor.Program)
 			if err != nil {
+				log.Trace().
+					Interface("thread", t.ToRun).
+					Err(err).
+					Msg("RunModel: thread execution error")
 				return nil, err
 			}
+
+			log.Trace().
+				Interface("thread", t.ToRun).
+				Str("pause_reason_after", st.GetPauseReason(t.ToRun).String()).
+				Interface("queue_after", st.Globals.Variables["queue"]).
+				Msg("RunModel: thread execution completed")
 
 			// Handle non-deterministic choice (oneof) - immediate expansion
 			if choices != nil {

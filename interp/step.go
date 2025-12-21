@@ -400,8 +400,8 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			// Condition satisfied - ALWAYS yield (to allow interleaving)
 			// but thread is immediately runnable
 			frame.WaitCondition = nil
-			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_YIELD: condition satisfied, yielding")
-			return YieldStep, 0, nil // Normal yield - thread is runnable
+			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_YIELD: condition satisfied, continuing")
+			return ContinueStep, 0, nil // Continue - don't yield
 		}
 
 		// Condition false - yield and mark as waiting
