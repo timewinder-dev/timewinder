@@ -73,6 +73,16 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 				}
 					// Condition now satisfied - thread is runnable
 				// CRITICAL: Rewind PC to re-check condition atomically when resuming
+				//
+				// Why rewinding is necessary:
+				// - evaluateWaitCondition runs on a CLONE to check if condition is satisfied
+				// - If satisfied, we know the thread CAN make progress
+				// - But the clone's state changes are discarded (we only checked satisfiability)
+				// - We must re-execute on the REAL state to apply side effects correctly
+				// - Rewinding PC to condition start ensures atomic re-execution from the beginning
+				//
+				// Without rewinding, thread would resume AFTER condition with stale state,
+				// leading to race conditions (e.g., queue[0] when queue is actually empty)
 				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: condition now true, rewinding PC")
 				for _, s := range states {
 					sClone := s.Clone()
@@ -180,31 +190,23 @@ func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *
 		Bool("state_changed", stateChanged).
 		Msg("evaluateWaitCondition: checking result")
 
-	// Logic for determining if condition is satisfied:
-	// 1. If thread is NOT Waiting anymore (Yield, Finished, etc.), condition was TRUE
-	// 2. If thread is Waiting at the SAME PC AND state didn't change, condition is FALSE
-	// 3. If thread is Waiting at the SAME PC BUT state changed, condition was TRUE (thread made progress, then looped back)
-	// 4. If thread is Waiting at a DIFFERENT PC, condition was TRUE (moved to different condition)
+	// Simplified logic: Check for the ONE false case (all others are true)
+	// Condition is FALSE only when thread is still waiting at the SAME condition with NO state change
+	// This means the thread executed CONDITIONAL_YIELD but made no progress
+	isStillWaiting := (newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting)
+	isSameCondition := newFrame.WaitCondition != nil && newFrame.WaitCondition.ConditionPC == originalConditionPC
 
-	if newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting {
-		if newFrame.WaitCondition != nil && newFrame.WaitCondition.ConditionPC == originalConditionPC {
-			// Waiting at the same condition
-			if !stateChanged {
-				// State didn't change - condition is FALSE
-				log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition false (same PC, no state change)")
-				return false, nil
-			}
-			// State changed - condition was TRUE, thread made progress and looped back
-			log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition true (same PC, but state changed)")
-			return true, nil
-		}
-		// Waiting at a different condition - original condition was TRUE
-		log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition true (different PC)")
-		return true, nil
+	if isStillWaiting && isSameCondition && !stateChanged {
+		// Still stuck on same condition with no progress → condition is FALSE
+		log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition false (same PC, no state change)")
+		return false, nil
 	}
 
-	// Not waiting - condition was TRUE
-	log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition true (not waiting)")
+	// All other cases → condition is TRUE:
+	// - Thread is not waiting anymore (Yield, Finished, etc.)
+	// - Thread moved to a different condition (original condition was satisfied)
+	// - Thread is at same condition but state changed (made progress, then looped back)
+	log.Trace().Interface("thread", threadID).Bool("still_waiting", isStillWaiting).Bool("same_condition", isSameCondition).Msg("evaluateWaitCondition: condition true")
 	return true, nil
 }
 

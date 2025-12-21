@@ -425,11 +425,11 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		frame.PC = newPC
 
 		if condResult.AsBool() {
-			// Condition satisfied - ALWAYS yield (to allow interleaving)
-			// but thread is immediately runnable (no stutter checking)
+			// Condition satisfied - continue atomically (no interleaving)
+			// Weakly fair semantics (no stutter checking) but same atomicity as until()
 			frame.WaitCondition = nil
-			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_FAIR_YIELD: condition satisfied, yielding (weakly fair)")
-			return YieldStep, int(YieldWeaklyFair), nil // Weakly fair yield
+			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_FAIR_YIELD: condition satisfied, continuing (weakly fair, atomic)")
+			return ContinueStep, 0, nil // Continue atomically
 		}
 
 		// Condition false - yield and mark as weakly fair waiting

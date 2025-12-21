@@ -91,6 +91,15 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 
 			// Check if builtin returned NonDetValue (immediate expansion needed)
 			// For builtins, f will be nil and result will be on stack
+			//
+			// IMPORTANT: NonDet handling is fundamentally different from Yield handling
+			// - Yield: Creates an interleaving point where scheduler picks WHICH thread runs next
+			//   Result: 1 successor state for each runnable thread
+			// - NonDet: Branches the state space where THIS thread explores ALL choices
+			//   Result: N successor states (one per choice) all running the same thread
+			//
+			// This is why NonDet cannot be unified with Yield - they represent different
+			// types of non-determinism (scheduler choice vs. program choice)
 			if f == nil && len(currentFrame.Stack) > 0 {
 				if nonDet, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.NonDetValue); ok {
 					// Pop the NonDetValue from stack
