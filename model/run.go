@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 
+	"github.com/rs/zerolog/log"
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 	"github.com/timewinder-dev/timewinder/vm"
@@ -20,6 +21,8 @@ func RunTrace(t *Thunk, prog *vm.Program) (*interp.State, []vm.Value, error) {
 // BuildRunnable generates successor states for a given thunk
 // Note: Cycle detection is now handled in RunModel(), not here
 func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, error) {
+	log.Trace().Interface("from_thread", t.ToRun).Msg("BuildRunnable: generating successors")
+
 	// Hash the state (CAS handles decomposition internally)
 	stateHash, err := exec.CAS.Put(state)
 	if err != nil {
@@ -32,6 +35,8 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 		return nil, err
 	}
 
+	log.Trace().Int("canonical_states", len(states)).Msg("BuildRunnable: canonicalized states")
+
 	// Build trace step for this execution
 	trace := TraceStep{ThreadRan: t.ToRun, StateHash: stateHash}
 
@@ -41,24 +46,30 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 		for localIdx, r := range threadSet.PauseReason {
 			threadID := interp.ThreadID{SetIdx: setIdx, LocalIdx: localIdx}
 
+			log.Trace().Interface("thread", threadID).Str("pause_reason", r.String()).Msg("BuildRunnable: checking thread")
+
 			switch r {
 			case interp.Finished:
 				// Thread has finished - no successors
+				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: thread finished, skipping")
 				continue
 
 			case interp.Waiting:
 				fallthrough
 			case interp.WeaklyFairWaiting:
 				// Re-check if wait condition is now satisfied
+				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: thread waiting, re-checking condition")
 				satisfied, err := evaluateWaitCondition(state, threadID, exec.Program)
 				if err != nil {
 					return nil, fmt.Errorf("Error evaluating wait condition for thread (%d,%d): %w", setIdx, localIdx, err)
 				}
 				if !satisfied {
 					// Still waiting - not runnable
+					log.Trace().Interface("thread", threadID).Msg("BuildRunnable: condition still false, thread not runnable")
 					continue
 				}
 				// Condition now satisfied - thread is runnable
+				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: condition now true, thread is runnable")
 				for _, s := range states {
 					out = append(out, &Thunk{
 						ToRun: threadID,
@@ -94,27 +105,50 @@ func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *
 		return false, fmt.Errorf("Thread (%d,%d) in Waiting state but WaitCondition is nil", threadID.SetIdx, threadID.LocalIdx)
 	}
 
+	log.Trace().
+		Interface("thread", threadID).
+		Str("condition_pc", currentFrame.WaitCondition.ConditionPC.String()).
+		Str("current_pc", currentFrame.PC.String()).
+		Msg("evaluateWaitCondition: re-checking wait condition")
+
 	// Clone state for test evaluation (don't modify original)
 	testState := state.Clone()
 	testFrame := testState.GetStackFrames(threadID).CurrentStack()
 
+	// Log global and local state before rewinding
+	log.Trace().
+		Interface("thread", threadID).
+		Interface("globals", testState.Globals.Variables).
+		Interface("locals", testFrame.Variables).
+		Int("stack_frames", len(testState.GetStackFrames(threadID))).
+		Msg("evaluateWaitCondition: global and local state before condition check")
+
 	// Rewind PC to condition start
 	testFrame.PC = currentFrame.WaitCondition.ConditionPC
+	log.Trace().Interface("thread", threadID).Str("rewound_pc", testFrame.PC.String()).Msg("evaluateWaitCondition: rewound PC")
 
 	// Execute this thread until it pauses
 	_, err := interp.RunToPause(prog, testState, threadID)
 	if err != nil {
+		log.Trace().Interface("thread", threadID).Err(err).Msg("evaluateWaitCondition: error during condition check")
 		return false, fmt.Errorf("Error re-evaluating wait condition: %w", err)
 	}
 
 	// Check why it paused
 	newReason := testState.GetPauseReason(threadID)
+	log.Trace().
+		Interface("thread", threadID).
+		Str("pause_reason", newReason.String()).
+		Msg("evaluateWaitCondition: condition check completed")
+
 	if newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting {
 		// Still waiting - condition is still false
+		log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition still false")
 		return false, nil
 	}
 
 	// Paused for a different reason or finished - condition must be true
+	log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition now true")
 	return true, nil
 }
 
