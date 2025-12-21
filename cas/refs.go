@@ -18,6 +18,7 @@ const (
 type ThreadInstanceRef struct {
 	StacksHashes []Hash        // Hash for each StackFrame in this thread's call stack
 	PauseReason  interp.Pause  // Why this thread is paused
+	WeaklyFair   bool          // True if last yield was from fstep() (weakly fair)
 }
 
 func (t *ThreadInstanceRef) Serialize(w io.Writer) error {

@@ -15,8 +15,9 @@ type ThreadID struct {
 
 // ThreadSet groups symmetric (interchangeable) threads together
 type ThreadSet struct {
-	Stacks      []StackFrames // Multiple threads in this set
-	PauseReason []Pause       // Parallel to Stacks
+	Stacks       []StackFrames // Multiple threads in this set
+	PauseReason  []Pause       // Parallel to Stacks
+	WeaklyFair   []bool        // Parallel to Stacks - true if last yield was from fstep() (weakly fair)
 }
 
 type State struct {
@@ -82,12 +83,10 @@ type Pause int
 const (
 	Start Pause = iota
 	Finished
-	Yield
-	NonDet            // Paused due to non-deterministic value (oneof)
-	WeaklyFairYield   // Weakly fair yield (from fstep) - no stutter checking
-	Stuttering        // Virtual state for stutter checking (as if process terminates)
-	Waiting           // Blocked on until() condition
-	WeaklyFairWaiting // Blocked on funtil() condition
+	Runnable   // Thread can run (from step() or fstep())
+	NonDet     // Paused due to non-deterministic value (oneof)
+	Blocked    // Thread is blocked on condition (from until() or funtil())
+	Stuttering // Virtual state for stutter checking (as if process terminates)
 )
 
 func (p Pause) String() string {
@@ -96,18 +95,14 @@ func (p Pause) String() string {
 		return "Start"
 	case Finished:
 		return "Finished"
-	case Yield:
-		return "Yield"
+	case Runnable:
+		return "Runnable"
 	case NonDet:
 		return "NonDet"
-	case WeaklyFairYield:
-		return "WeaklyFairYield"
+	case Blocked:
+		return "Blocked"
 	case Stuttering:
 		return "Stuttering"
-	case Waiting:
-		return "Waiting"
-	case WeaklyFairWaiting:
-		return "WeaklyFairWaiting"
 	default:
 		return fmt.Sprintf("Unknown(%d)", p)
 	}

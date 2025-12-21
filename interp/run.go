@@ -139,19 +139,26 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 			log.Trace().Interface("thread", thread).Int("stack_depth", len(threadStack)).Msg("RunToPause: function ended without return")
 		case YieldStep:
 			// Check yield type to set appropriate pause reason
+			// NEW: Use Runnable/Blocked instead of old pause reasons
 			var pause Pause
+			var weaklyFair bool
 			switch YieldType(n) {
 			case YieldWaiting:
-				pause = Waiting
+				pause = Blocked // NEW: was Waiting
+				weaklyFair = false
 			case YieldWeaklyFairWaiting:
-				pause = WeaklyFairWaiting
+				pause = Blocked // NEW: was WeaklyFairWaiting
+				weaklyFair = true
 			case YieldWeaklyFair:
-				pause = WeaklyFairYield
+				pause = Runnable // NEW: was WeaklyFairYield
+				weaklyFair = true
 			default:
-				pause = Yield
+				pause = Runnable // NEW: was Yield
+				weaklyFair = false
 			}
-			log.Trace().Interface("thread", thread).Str("pause", pause.String()).Msg("RunToPause: thread yielded")
+			log.Trace().Interface("thread", thread).Str("pause", pause.String()).Bool("weakly_fair", weaklyFair).Msg("RunToPause: thread yielded")
 			s.SetPauseReason(thread, pause)
+			s.SetWeaklyFair(thread, weaklyFair)
 			return nil, nil
 		default:
 			panic("unhandled intermediate step")

@@ -285,7 +285,8 @@ func TestRoundTrip_State(t *testing.T) {
 						},
 					},
 				},
-				PauseReason: []interp.Pause{interp.Yield},
+				PauseReason: []interp.Pause{interp.Runnable},
+				WeaklyFair:  []bool{false},
 			},
 		},
 	}

@@ -57,9 +57,7 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: thread finished, skipping")
 				continue
 
-			case interp.Waiting:
-				fallthrough
-			case interp.WeaklyFairWaiting:
+			case interp.Blocked:
 				// Re-check if wait condition is now satisfied
 				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: thread waiting, re-checking condition")
 				satisfied, err := evaluateWaitCondition(state, threadID, exec.Program, exec.CAS)
@@ -101,9 +99,7 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 					})
 				}
 
-			case interp.Yield:
-				fallthrough
-			case interp.WeaklyFairYield:
+			case interp.Runnable:
 				fallthrough
 			case interp.Start:
 				// Thread is runnable - create successor thunks
@@ -191,9 +187,9 @@ func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *
 		Msg("evaluateWaitCondition: checking result")
 
 	// Simplified logic: Check for the ONE false case (all others are true)
-	// Condition is FALSE only when thread is still waiting at the SAME condition with NO state change
+	// Condition is FALSE only when thread is still blocked at the SAME condition with NO state change
 	// This means the thread executed CONDITIONAL_YIELD but made no progress
-	isStillWaiting := (newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting)
+	isStillWaiting := (newReason == interp.Blocked)
 	isSameCondition := newFrame.WaitCondition != nil && newFrame.WaitCondition.ConditionPC == originalConditionPC
 
 	if isStillWaiting && isSameCondition && !stateChanged {

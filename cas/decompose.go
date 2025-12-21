@@ -54,9 +54,14 @@ func decomposeState(c *MemoryCAS, s *interp.State) (Hash, error) {
 			}
 
 			// Create ThreadInstanceRef
+			weaklyFair := false
+			if threadSet.WeaklyFair != nil && localIdx < len(threadSet.WeaklyFair) {
+				weaklyFair = threadSet.WeaklyFair[localIdx]
+			}
 			tir := ThreadInstanceRef{
 				StacksHashes: threadHashes,
 				PauseReason:  threadSet.PauseReason[localIdx],
+				WeaklyFair:   weaklyFair,
 			}
 			threadInstances = append(threadInstances, tir)
 		}

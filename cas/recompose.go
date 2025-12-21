@@ -28,6 +28,7 @@ func recomposeState(c directStore, hash Hash) (*interp.State, error) {
 	for setIdx, threadSetRef := range ref.ThreadSets {
 		var stacks []interp.StackFrames
 		var pauseReasons []interp.Pause
+		var weaklyFair []bool
 
 		// Reconstruct each thread in the set
 		for localIdx, threadInstanceRef := range threadSetRef.Threads {
@@ -43,12 +44,14 @@ func recomposeState(c directStore, hash Hash) (*interp.State, error) {
 
 			stacks = append(stacks, threadStack)
 			pauseReasons = append(pauseReasons, threadInstanceRef.PauseReason)
+			weaklyFair = append(weaklyFair, threadInstanceRef.WeaklyFair)
 		}
 
 		// Create ThreadSet
 		threadSet := interp.ThreadSet{
 			Stacks:      stacks,
 			PauseReason: pauseReasons,
+			WeaklyFair:  weaklyFair,
 		}
 		threadSets = append(threadSets, threadSet)
 	}

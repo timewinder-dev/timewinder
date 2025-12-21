@@ -139,7 +139,7 @@ func reconstructTrace(w io.Writer, v PropertyViolation) {
 
 				// Get step name if yielded
 				stepName := ""
-				if pauseReason == interp.Yield && len(currentFrame.Stack) > 0 {
+				if pauseReason == interp.Runnable && len(currentFrame.Stack) > 0 {
 					if topValue, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.StrValue); ok {
 						stepName = string(topValue)
 					}
@@ -193,7 +193,7 @@ func reconstructTrace(w io.Writer, v PropertyViolation) {
 
 				// Get step name if yielded
 				stepName := ""
-				if pauseReason == interp.Yield && len(currentFrame.Stack) > 0 {
+				if pauseReason == interp.Runnable && len(currentFrame.Stack) > 0 {
 					if topValue, ok := currentFrame.Stack[len(currentFrame.Stack)-1].(vm.StrValue); ok {
 						stepName = string(topValue)
 					}

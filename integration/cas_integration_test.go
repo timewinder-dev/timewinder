@@ -283,7 +283,8 @@ func TestCAS_StateWithThreads(t *testing.T) {
 						},
 					},
 				},
-				PauseReason: []interp.Pause{interp.Yield},
+				PauseReason: []interp.Pause{interp.Runnable},
+				WeaklyFair:  []bool{false},
 			},
 			// Thread 1 in singleton set
 			{
@@ -329,7 +330,7 @@ func TestCAS_StateWithThreads(t *testing.T) {
 	assert.Equal(t, 1, len(thread1.Stack))
 
 	// Verify pause reasons
-	assert.Equal(t, interp.Yield, recovered.ThreadSets[0].PauseReason[0])
+	assert.Equal(t, interp.Runnable, recovered.ThreadSets[0].PauseReason[0])
 	assert.Equal(t, interp.Start, recovered.ThreadSets[1].PauseReason[0])
 }
 

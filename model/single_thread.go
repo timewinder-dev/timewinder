@@ -164,7 +164,7 @@ func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, state
 			for _, reason := range threadSet.PauseReason {
 				if reason != interp.Finished {
 					allFinished = false
-					if reason == interp.Waiting || reason == interp.WeaklyFairWaiting {
+					if reason == interp.Blocked {
 						fmt.Fprintf(s.Executor.DebugWriter, "  Thread %d is waiting (potential deadlock)\n", flatIdx)
 					}
 				}
@@ -244,14 +244,16 @@ func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) 
 func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*ModelResult, error) {
 	w := s.Executor.DebugWriter
 	threadPauseReason := st.GetPauseReason(t.ToRun)
+	weaklyFair := st.GetWeaklyFair(t.ToRun)
 
 	// Check stutter for:
-	// - Yield (normal step())
-	// - Waiting (until() - user requested stutter checking)
+	// - Runnable with NOT weakly fair (normal step())
+	// - Blocked with NOT weakly fair (normal until())
 	// Skip for:
-	// - WeaklyFairYield (fstep())
-	// - WeaklyFairWaiting (funtil())
-	shouldCheck := (threadPauseReason == interp.Yield || threadPauseReason == interp.Waiting)
+	// - Runnable with weakly fair (fstep())
+	// - Blocked with weakly fair (funtil())
+	shouldCheck := ((threadPauseReason == interp.Runnable && !weaklyFair) ||
+		(threadPauseReason == interp.Blocked && !weaklyFair))
 
 	if !shouldCheck || len(s.Executor.TemporalConstraints) == 0 {
 		return nil, nil

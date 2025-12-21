@@ -44,6 +44,24 @@ func (s *State) SetPauseReason(tid ThreadID, pause Pause) {
 	s.ThreadSets[tid.SetIdx].PauseReason[tid.LocalIdx] = pause
 }
 
+// GetWeaklyFair returns whether the thread's last yield was weakly fair (from fstep)
+func (s *State) GetWeaklyFair(tid ThreadID) bool {
+	// Return false if WeaklyFair array doesn't exist (for backward compatibility)
+	if s.ThreadSets[tid.SetIdx].WeaklyFair == nil {
+		return false
+	}
+	return s.ThreadSets[tid.SetIdx].WeaklyFair[tid.LocalIdx]
+}
+
+// SetWeaklyFair sets whether the thread's last yield was weakly fair
+func (s *State) SetWeaklyFair(tid ThreadID, weaklyFair bool) {
+	// Initialize WeaklyFair array if it doesn't exist
+	if s.ThreadSets[tid.SetIdx].WeaklyFair == nil {
+		s.ThreadSets[tid.SetIdx].WeaklyFair = make([]bool, len(s.ThreadSets[tid.SetIdx].Stacks))
+	}
+	s.ThreadSets[tid.SetIdx].WeaklyFair[tid.LocalIdx] = weaklyFair
+}
+
 func (s *State) Clone() *State {
 	out := &State{
 		Globals:    s.Globals.Clone(),
@@ -63,9 +81,17 @@ func (s *State) Clone() *State {
 		pauseReasons := make([]Pause, len(ts.PauseReason))
 		copy(pauseReasons, ts.PauseReason)
 
+		// Copy weakly fair flags
+		var weaklyFair []bool
+		if ts.WeaklyFair != nil {
+			weaklyFair = make([]bool, len(ts.WeaklyFair))
+			copy(weaklyFair, ts.WeaklyFair)
+		}
+
 		out.ThreadSets[i] = ThreadSet{
 			Stacks:      stacks,
 			PauseReason: pauseReasons,
+			WeaklyFair:  weaklyFair,
 		}
 	}
 	return out
@@ -278,7 +304,7 @@ func (s *State) PrettyPrintTo(w io.Writer, prog *vm.Program) {
 					}
 
 					// If yielded, show the step name from top of stack
-					if pauseReason == Yield && len(currentFrame.Stack) > 0 {
+					if pauseReason == Runnable && len(currentFrame.Stack) > 0 {
 						topValue := currentFrame.Stack[len(currentFrame.Stack)-1]
 						if stepName, ok := topValue.(vm.StrValue); ok {
 							fmt.Fprintf(w, "    Step: %s\n", stepName)
