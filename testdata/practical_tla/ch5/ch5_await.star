@@ -14,5 +14,5 @@ def reader():
 
 def writer():
   while True:
-    queue = append(queue, "msg")
+    queue.append("msg")
     until(len(queue) < max_queue_size)

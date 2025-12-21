@@ -3,6 +3,7 @@ package interp
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/rs/zerolog/log"
@@ -16,6 +17,7 @@ const (
 	ReturnStep
 	EndStep
 	CallStep
+	MethodCallStep // Method call encountered (e.g., arr.append(x))
 	ErrorStep
 	YieldStep
 	NonDetStep // Non-deterministic choice encountered (from oneof builtin)
@@ -34,6 +36,7 @@ const (
 type Program interface {
 	GetInstruction(vm.ExecPtr) (vm.Op, error)
 	Resolve(name string) (vm.ExecPtr, bool)
+	GetFunction(vm.ExecPtr) *vm.Function
 }
 
 func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult, int, error) {
@@ -72,23 +75,36 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 	case vm.SETVAL:
 		name := frame.Pop()
 		val := frame.Pop()
-		saved := false
 		variable := mustString(name)
-		for i := len(stack) - 1; i >= 0; i-- {
-			if stack[i].Has(variable) {
-				stack[i].StoreVar(variable, val)
-				saved = true
-				break
-			}
-		}
-		if !saved && globals != nil && globals.Has(variable) {
-			globals.StoreVar(variable, val)
-			saved = true
-		}
-		if !saved {
+
+		// Get current function to check if variable is local (JavaScript-like scoping)
+		currentFunc := program.GetFunction(frame.PC)
+		isLocal := currentFunc != nil && slices.Contains(currentFunc.LocalVars, variable)
+
+		if isLocal {
+			// Variable is assigned somewhere in this function, so it's always local
 			frame.StoreVar(variable, val)
+			log.Trace().Str("variable", variable).Interface("value", val).Bool("is_local", true).Interface("stack", frame.Stack).Msg("  SETVAL")
+		} else {
+			// Variable is not local - search frames and globals
+			saved := false
+			for i := len(stack) - 1; i >= 0; i-- {
+				if stack[i].Has(variable) {
+					stack[i].StoreVar(variable, val)
+					saved = true
+					break
+				}
+			}
+			if !saved && globals != nil {
+				// Store in globals (don't check if it exists first - always store)
+				globals.StoreVar(variable, val)
+				saved = true
+			}
+			if !saved {
+				frame.StoreVar(variable, val)
+			}
+			log.Trace().Str("variable", variable).Interface("value", val).Bool("is_local", false).Interface("stack", frame.Stack).Msg("  SETVAL")
 		}
-		log.Trace().Str("variable", variable).Interface("value", val).Interface("stack", frame.Stack).Msg("  SETVAL")
 	case vm.GETVAL:
 		name := frame.Pop()
 		varName := mustString(name)
@@ -343,6 +359,15 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 			return CallStep, int(v), nil
 		} else {
 			return ErrorStep, 0, fmt.Errorf("Error in compilation; CALL should carry an int")
+		}
+	case vm.CALL_METHOD:
+		if v, ok := inst.Arg.(vm.IntValue); ok {
+			// Stack: arg1, arg2, ..., argN, receiver, methodName
+			// Don't pop here - let BuildMethodCallFrame handle it
+			log.Trace().Int("argc", int(v)).Interface("stack", frame.Stack).Str("pc", frame.PC.String()).Msg("  CALL_METHOD")
+			return MethodCallStep, int(v), nil
+		} else {
+			return ErrorStep, 0, fmt.Errorf("Error in compilation; CALL_METHOD should carry an int")
 		}
 	case vm.YIELD:
 		// Yield execution to allow other threads to run

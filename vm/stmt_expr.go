@@ -26,6 +26,8 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		if err != nil {
 			return err
 		}
+		// Static analysis: collect all assigned variables for JavaScript-like scoping
+		sub.localVars = collectAssignedVars(v.Body)
 		err = sub.buildFromStatements(v.Body)
 		if err != nil {
 			return err
@@ -37,6 +39,25 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		}
 		cc.subContext[name] = sub
 	case *syntax.ExprStmt:
+		// Check if this is a method call on a simple variable (e.g., queue.append(val))
+		// For these, we need to store the result back to the receiver variable
+		if callExpr, ok := v.X.(*syntax.CallExpr); ok {
+			if dotExpr, ok := callExpr.Fn.(*syntax.DotExpr); ok {
+				if ident, ok := dotExpr.X.(*syntax.Ident); ok {
+					// This is varname.method(args) - emit method call then store result back
+					err := cc.expr(v.X) // Emits CALL_METHOD, pushes result to stack
+					if err != nil {
+						return err
+					}
+					// Store result back to the receiver variable
+					cc.emit(PUSH, StrValue(ident.Name))
+					cc.emit(SETVAL)
+					return nil
+				}
+			}
+		}
+
+		// Not a method call on simple variable, handle normally
 		if _, ok := v.X.(*syntax.Literal); ok {
 			// Opt: don't compile literals only to pop them.
 			return nil
@@ -170,17 +191,40 @@ func (cc *compileContext) expr(e syntax.Expr) error {
 		if ok, err := cc.specialCall(v); ok {
 			return err
 		}
-		for _, a := range v.Args {
-			err := cc.callArg(a)
+
+		// Check if this is a method call: obj.method(args)
+		if dotExpr, ok := v.Fn.(*syntax.DotExpr); ok {
+			// This is a method call
+			// Stack layout: arg1, arg2, ..., argN, receiver, methodName, N
+			for _, a := range v.Args {
+				err := cc.callArg(a)
+				if err != nil {
+					return err
+				}
+			}
+			// Push receiver
+			err := cc.expr(dotExpr.X)
 			if err != nil {
 				return err
 			}
+			// Push method name
+			cc.emit(PUSH, StrValue(dotExpr.Name.Name))
+			// Emit CALL_METHOD with argument count
+			cc.emit(CALL_METHOD, IntValue(len(v.Args)))
+		} else {
+			// Regular function call
+			for _, a := range v.Args {
+				err := cc.callArg(a)
+				if err != nil {
+					return err
+				}
+			}
+			err := cc.expr(v.Fn)
+			if err != nil {
+				return err
+			}
+			cc.emit(CALL, IntValue(len(v.Args)))
 		}
-		err := cc.expr(v.Fn)
-		if err != nil {
-			return err
-		}
-		cc.emit(CALL, IntValue(len(v.Args)))
 	case *syntax.Comprehension:
 		return errors.New("Comprehensions are as yet unsupported")
 	case *syntax.CondExpr:

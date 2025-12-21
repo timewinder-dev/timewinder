@@ -40,7 +40,8 @@ const (
 	ITER_NEXT    // Nexts the iteration
 	ITER_END     // Pops the iterator stack prematurely, jumps to end label
 
-	CALL // A B C Fn | arg: 3, calls Fn with the top three args |
+	CALL        // A B C Fn | arg: 3, calls Fn with the top three args |
+	CALL_METHOD // A B receiver methodName | arg: 2, calls receiver.methodName(A, B) |
 
 	// Here begin the opcodes that are unique to a VM that is trying to run through a search. They should add a value to the stack, but are hints to the execution.
 	YIELD              // Arg: step name. Pauses execution and maybe something else runs. Breaks atomicity of actions in a function.
@@ -111,6 +112,8 @@ func (o Opcode) String() string {
 		return "DUP"
 	case CALL:
 		return "CALL"
+	case CALL_METHOD:
+		return "CALL_METHOD"
 	case GETATTR:
 		return "GETATTR"
 	case SETATTR:

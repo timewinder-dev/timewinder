@@ -147,3 +147,57 @@ func BuildCallFrame(prog *vm.Program, frame *StackFrame, n int) (*StackFrame, er
 	log.Trace().Str("pc", ptr.String()).Interface("variables", newFrame.Variables).Msg("BuildCallFrame: created call frame")
 	return newFrame, nil
 }
+
+// BuildMethodCallFrame handles method calls (e.g., arr.append(x))
+// Methods execute immediately and don't create new stack frames
+func BuildMethodCallFrame(frame *StackFrame, n int) error {
+	// Stack layout: arg1, arg2, ..., argN, receiver, methodName
+	// Pop method name and receiver
+	methodName := mustString(frame.Pop())
+	receiver := frame.Pop()
+
+	// Pop arguments (in reverse order)
+	args := make([]vm.Value, n)
+	for i := n - 1; i >= 0; i-- {
+		argVal, ok := frame.Pop().(vm.ArgValue)
+		if !ok {
+			return fmt.Errorf("Compiler error: stack contains non-call arguments for method call")
+		}
+		args[i] = argVal.Value
+	}
+
+	log.Trace().
+		Str("method", methodName).
+		Interface("receiver_type", vm.GetTypeName(receiver)).
+		Interface("args", args).
+		Msg("BuildMethodCallFrame: calling method")
+
+	// Look up method by receiver type
+	typeName := vm.GetTypeName(receiver)
+	methodTable, ok := vm.MethodRegistry[typeName]
+	if !ok {
+		return fmt.Errorf("type %s has no methods", typeName)
+	}
+
+	method, ok := methodTable[methodName]
+	if !ok {
+		return fmt.Errorf("type %s has no method %s", typeName, methodName)
+	}
+
+	// Call the method
+	result, err := method(receiver, args)
+	if err != nil {
+		log.Trace().Str("method", methodName).Err(err).Msg("BuildMethodCallFrame: method error")
+		return err
+	}
+
+	log.Trace().Str("method", methodName).Interface("result", result).Msg("BuildMethodCallFrame: method returned")
+
+	// Push result to stack
+	frame.Push(result)
+
+	// Increment PC to move past CALL_METHOD instruction
+	frame.PC = frame.PC.Inc()
+
+	return nil // No new frame for methods
+}

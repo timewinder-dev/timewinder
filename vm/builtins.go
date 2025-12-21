@@ -6,18 +6,18 @@ import (
 
 // BuiltinRegistry maps builtin function names to their implementations
 var BuiltinRegistry = map[string]func(args []Value) (Value, error){
-	"range":  builtinRange,
-	"oneof":  builtinOneof,
-	"len":    builtinLen,
-	"append": builtinAppend,
+	"range":      builtinRange,
+	"oneof":      builtinOneof,
+	"len":        builtinLen,
+	"global_var": builtinGlobalVar,
 }
 
 // AllBuiltins contains the BuiltinValue instances to inject into global scope
 var AllBuiltins = map[string]BuiltinValue{
-	"range":  {Name: "range"},
-	"oneof":  {Name: "oneof"},
-	"len":    {Name: "len"},
-	"append": {Name: "append"},
+	"range":      {Name: "range"},
+	"oneof":      {Name: "oneof"},
+	"len":        {Name: "len"},
+	"global_var": {Name: "global_var"},
 }
 
 // builtinRange implements Python-like range() function
@@ -138,20 +138,22 @@ func builtinLen(args []Value) (Value, error) {
 	}
 }
 
-// builtinAppend returns a new array with the element appended (functional style)
-func builtinAppend(args []Value) (Value, error) {
-	if len(args) != 2 {
-		return nil, fmt.Errorf("append() takes exactly 2 arguments (array, element), got %d", len(args))
+// builtinGlobalVar is a compile-time directive (no-op at runtime)
+// Usage: global_var("varname") declares a variable as global within a function
+// This prevents it from being treated as local even if assigned
+func builtinGlobalVar(args []Value) (Value, error) {
+	// Validate arguments for error checking, but do nothing at runtime
+	// The real work happens during compilation in collectGlobalDeclarations()
+	if len(args) == 0 {
+		return nil, fmt.Errorf("global_var() requires at least one argument")
 	}
 
-	arr, ok := args[0].(ArrayValue)
-	if !ok {
-		return nil, fmt.Errorf("append() first argument must be an array, got %T", args[0])
+	for _, arg := range args {
+		if _, ok := arg.(StrValue); !ok {
+			return nil, fmt.Errorf("global_var() arguments must be strings, got %T", arg)
+		}
 	}
 
-	// Return new array with element appended (functional style)
-	newArr := make(ArrayValue, len(arr)+1)
-	copy(newArr, arr)
-	newArr[len(arr)] = args[1]
-	return newArr, nil
+	// Return None - this is a compile-time directive
+	return None, nil
 }

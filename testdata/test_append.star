@@ -3,4 +3,4 @@
 queue = []
 
 def test():
-  queue = append(queue, "msg")
+  queue.append("msg")

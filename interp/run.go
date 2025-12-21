@@ -107,6 +107,15 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 				threadStack.Append(f)
 				log.Trace().Interface("thread", thread).Int("stack_depth", len(threadStack)).Msg("RunToPause: pushed call frame")
 			}
+		case MethodCallStep:
+			currentFrame := threadStack.CurrentStack()
+			err := BuildMethodCallFrame(currentFrame, n)
+			if err != nil {
+				log.Trace().Interface("thread", thread).Err(err).Msg("RunToPause: method call error")
+				return nil, err
+			}
+			// Method already incremented PC, just continue
+			log.Trace().Interface("thread", thread).Msg("RunToPause: method call completed")
 		case ContinueStep:
 			continue
 		case EndStep:

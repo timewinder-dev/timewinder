@@ -44,6 +44,17 @@ func (p *Program) Resolve(name string) (ExecPtr, bool) {
 	return 0, false
 }
 
+// GetFunction returns the Function for a given PC
+func (p *Program) GetFunction(ptr ExecPtr) *Function {
+	if ptr.CodeID() == 0 {
+		return p.Main
+	}
+	if ptr.CodeID()-1 < len(p.Code) {
+		return p.Code[ptr.CodeID()-1]
+	}
+	return nil
+}
+
 // GetLineNumber returns the source line number for a given PC
 func (p *Program) GetLineNumber(ptr ExecPtr) int {
 	var f *Function
@@ -78,6 +89,7 @@ func (p *Program) GetFilename(ptr ExecPtr) string {
 type Function struct {
 	Bytecode  []Op
 	Params    []FunctionParam
+	LocalVars []string // Variables assigned anywhere in this function (JavaScript-like scoping)
 	LineMap   []int    // Maps PC offset to source line number
 	Filename  string   // Source filename for this function
 }
