@@ -1,14 +1,23 @@
 package integration
 
 import (
+	"os"
 	"testing"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/timewinder-dev/timewinder/cas"
 	"github.com/timewinder-dev/timewinder/interp"
 	"github.com/timewinder-dev/timewinder/vm"
 )
+
+func TestMain(m *testing.M) {
+	// Disable trace logging in tests
+	log.Logger = zerolog.New(os.Stderr).Level(zerolog.Disabled)
+	os.Exit(m.Run())
+}
 
 // TestCAS_SimpleProgram tests CAS with a simple Starlark program
 func TestCAS_SimpleProgram(t *testing.T) {

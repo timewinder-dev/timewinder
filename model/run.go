@@ -36,6 +36,9 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 	}
 
 	log.Trace().Int("canonical_states", len(states)).Msg("BuildRunnable: canonicalized states")
+	if len(states) > 1 {
+		log.Debug().Int("canonical_states", len(states)).Msg("BuildRunnable: multiple canonical states from Canonicalize")
+	}
 
 	// Build trace step for this execution
 	trace := TraceStep{ThreadRan: t.ToRun, StateHash: stateHash}
@@ -59,7 +62,7 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 			case interp.WeaklyFairWaiting:
 				// Re-check if wait condition is now satisfied
 				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: thread waiting, re-checking condition")
-				satisfied, err := evaluateWaitCondition(state, threadID, exec.Program)
+				satisfied, err := evaluateWaitCondition(state, threadID, exec.Program, exec.CAS)
 				if err != nil {
 					return nil, fmt.Errorf("Error evaluating wait condition for thread (%d,%d): %w", setIdx, localIdx, err)
 				}
@@ -68,12 +71,22 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 					log.Trace().Interface("thread", threadID).Msg("BuildRunnable: condition still false, thread not runnable")
 					continue
 				}
-				// Condition now satisfied - thread is runnable
-				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: condition now true, thread is runnable")
+					// Condition now satisfied - thread is runnable
+				// CRITICAL: Rewind PC to re-check condition atomically when resuming
+				log.Trace().Interface("thread", threadID).Msg("BuildRunnable: condition now true, rewinding PC")
 				for _, s := range states {
+					sClone := s.Clone()
+					frame := sClone.GetStackFrames(threadID).CurrentStack()
+					if frame.WaitCondition != nil {
+						// Rewind to condition start so thread re-checks atomically
+						frame.PC = frame.WaitCondition.ConditionPC
+						frame.WaitCondition = nil
+						log.Trace().Interface("thread", threadID).Str("pc", frame.PC.String()).Msg("BuildRunnable: PC rewound")
+					}
+					log.Debug().Interface("thread", threadID).Msg("BuildRunnable: adding successor for waiting thread")
 					out = append(out, &Thunk{
 						ToRun: threadID,
-						State: s,
+						State: sClone,
 						Trace: append(t.Trace, trace),
 					})
 				}
@@ -99,7 +112,7 @@ func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, err
 }
 
 // evaluateWaitCondition re-executes the wait condition to check if it's now true
-func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *vm.Program) (bool, error) {
+func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *vm.Program, casStore cas.CAS) (bool, error) {
 	currentFrame := state.GetStackFrames(threadID).CurrentStack()
 	if currentFrame.WaitCondition == nil {
 		return false, fmt.Errorf("Thread (%d,%d) in Waiting state but WaitCondition is nil", threadID.SetIdx, threadID.LocalIdx)
@@ -123,32 +136,75 @@ func evaluateWaitCondition(state *interp.State, threadID interp.ThreadID, prog *
 		Int("stack_frames", len(testState.GetStackFrames(threadID))).
 		Msg("evaluateWaitCondition: global and local state before condition check")
 
+	// Hash the state BEFORE running to compare later
+	originalStateHash, err := casStore.Put(testState)
+	if err != nil {
+		return false, fmt.Errorf("failed to hash state: %w", err)
+	}
+
 	// Rewind PC to condition start
 	testFrame.PC = currentFrame.WaitCondition.ConditionPC
+	originalConditionPC := currentFrame.WaitCondition.ConditionPC
 	log.Trace().Interface("thread", threadID).Str("rewound_pc", testFrame.PC.String()).Msg("evaluateWaitCondition: rewound PC")
 
 	// Execute this thread until it pauses
-	_, err := interp.RunToPause(prog, testState, threadID)
+	_, err = interp.RunToPause(prog, testState, threadID)
 	if err != nil {
 		log.Trace().Interface("thread", threadID).Err(err).Msg("evaluateWaitCondition: error during condition check")
 		return false, fmt.Errorf("Error re-evaluating wait condition: %w", err)
 	}
 
-	// Check why it paused
+	// Check the result:
 	newReason := testState.GetPauseReason(threadID)
-	log.Trace().
-		Interface("thread", threadID).
-		Str("pause_reason", newReason.String()).
-		Msg("evaluateWaitCondition: condition check completed")
+	newFrame := testState.GetStackFrames(threadID).CurrentStack()
 
-	if newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting {
-		// Still waiting - condition is still false
-		log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition still false")
-		return false, nil
+	// Hash the state AFTER running to see if it changed
+	newStateHash, err := casStore.Put(testState)
+	if err != nil {
+		return false, fmt.Errorf("failed to hash new state: %w", err)
 	}
 
-	// Paused for a different reason or finished - condition must be true
-	log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition now true")
+	stateChanged := originalStateHash != newStateHash
+
+	log.Trace().
+		Interface("thread", threadID).
+		Str("new_reason", newReason.String()).
+		Bool("has_wait_condition", newFrame.WaitCondition != nil).
+		Str("original_pc", originalConditionPC.String()).
+		Str("new_pc", func() string {
+			if newFrame.WaitCondition != nil {
+				return newFrame.WaitCondition.ConditionPC.String()
+			}
+			return "nil"
+		}()).
+		Bool("state_changed", stateChanged).
+		Msg("evaluateWaitCondition: checking result")
+
+	// Logic for determining if condition is satisfied:
+	// 1. If thread is NOT Waiting anymore (Yield, Finished, etc.), condition was TRUE
+	// 2. If thread is Waiting at the SAME PC AND state didn't change, condition is FALSE
+	// 3. If thread is Waiting at the SAME PC BUT state changed, condition was TRUE (thread made progress, then looped back)
+	// 4. If thread is Waiting at a DIFFERENT PC, condition was TRUE (moved to different condition)
+
+	if newReason == interp.Waiting || newReason == interp.WeaklyFairWaiting {
+		if newFrame.WaitCondition != nil && newFrame.WaitCondition.ConditionPC == originalConditionPC {
+			// Waiting at the same condition
+			if !stateChanged {
+				// State didn't change - condition is FALSE
+				log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition false (same PC, no state change)")
+				return false, nil
+			}
+			// State changed - condition was TRUE, thread made progress and looped back
+			log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition true (same PC, but state changed)")
+			return true, nil
+		}
+		// Waiting at a different condition - original condition was TRUE
+		log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition true (different PC)")
+		return true, nil
+	}
+
+	// Not waiting - condition was TRUE
+	log.Trace().Interface("thread", threadID).Msg("evaluateWaitCondition: condition true (not waiting)")
 	return true, nil
 }
 
