@@ -26,10 +26,12 @@ const (
 type YieldType int
 
 const (
-	YieldNormal             YieldType = iota
-	YieldWeaklyFair                   // Weakly fair yield (from fstep) - no stutter checking
-	YieldWaiting                      // Waiting on condition (from until)
-	YieldWeaklyFairWaiting            // Weakly fair waiting (from funtil)
+	YieldNormal              YieldType = iota
+	YieldWeaklyFair                    // Weakly fair yield (from fstep) - no stutter checking
+	YieldStronglyFair                  // Strongly fair yield (from sfstep) - no stutter checking
+	YieldWaiting                       // Waiting on condition (from until)
+	YieldWeaklyFairWaiting             // Weakly fair waiting (from funtil)
+	YieldStronglyFairWaiting           // Strongly fair waiting (from sfuntil)
 )
 
 type Program interface {
@@ -384,6 +386,14 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		log.Trace().Str("pc", frame.PC.String()).Str("new_pc", newPC.String()).Interface("stack", frame.Stack).Msg("  FAIR_YIELD: yielding (weakly fair)")
 		frame.PC = newPC
 		return YieldStep, int(YieldWeaklyFair), nil
+	case vm.STRONG_YIELD:
+		// Strongly fair yield - similar to YIELD but marks as StronglyFairYield
+		// This prevents stutter checking and enforces strong fairness
+		// The step name should already be on the stack from compilation
+		newPC := frame.PC.Inc()
+		log.Trace().Str("pc", frame.PC.String()).Str("new_pc", newPC.String()).Interface("stack", frame.Stack).Msg("  STRONG_YIELD: yielding (strongly fair)")
+		frame.PC = newPC
+		return YieldStep, int(YieldStronglyFair), nil
 	case vm.CONDITIONAL_YIELD:
 		// Pop condition result from stack
 		condResult := frame.Pop()
@@ -440,6 +450,35 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		}
 		log.Trace().Bool("condition", false).Str("pc", newPC.String()).Str("retry_pc", condPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_FAIR_YIELD: waiting for condition (weakly fair)")
 		return YieldStep, int(YieldWeaklyFairWaiting), nil
+	case vm.CONDITIONAL_STRONG_YIELD:
+		// Pop condition result from stack
+		condResult := frame.Pop()
+		retryOffset, ok := inst.Arg.(vm.IntValue)
+		if !ok {
+			return ErrorStep, 0, fmt.Errorf("CONDITIONAL_STRONG_YIELD requires integer offset")
+		}
+
+		newPC := frame.PC.Inc()
+		frame.PC = newPC
+
+		if condResult.AsBool() {
+			// Condition satisfied - continue atomically (no interleaving)
+			// Strongly fair semantics (no stutter checking) but same atomicity as until()
+			frame.WaitCondition = nil
+			log.Trace().Bool("condition", true).Str("pc", newPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_STRONG_YIELD: condition satisfied, continuing (strongly fair, atomic)")
+			return ContinueStep, 0, nil // Continue atomically
+		}
+
+		// Condition false - yield and mark as strongly fair waiting
+		// Thread won't be runnable until condition becomes true
+		condPC := frame.PC.SetOffset(int(retryOffset))
+		frame.WaitCondition = &WaitConditionInfo{
+			ConditionPC:    condPC,
+			IsWeaklyFair:   false,
+			IsStronglyFair: true,
+		}
+		log.Trace().Bool("condition", false).Str("pc", newPC.String()).Str("retry_pc", condPC.String()).Interface("stack", frame.Stack).Msg("  CONDITIONAL_STRONG_YIELD: waiting for condition (strongly fair)")
+		return YieldStep, int(YieldStronglyFairWaiting), nil
 	case vm.ITER_START:
 		// Pop the iterable from stack
 		iterable := frame.Pop()

@@ -18,7 +18,9 @@ type ThreadSet struct {
 	Stacks       []StackFrames // Multiple threads in this set
 	PauseReason  []Pause       // Parallel to Stacks
 	WeaklyFair   []bool        // Parallel to Stacks - true if last yield was from fstep() (weakly fair)
+	StronglyFair []bool        // Parallel to Stacks - true if last yield was from sfstep() (strongly fair)
 	Fair         bool          // If true, this thread set uses weakly fair semantics (step->fstep, until->funtil)
+	StrongFair   bool          // If true, this thread set uses strongly fair semantics (step->sfstep, until->sfuntil)
 }
 
 type State struct {
@@ -36,8 +38,9 @@ type StackFrame struct {
 }
 
 type WaitConditionInfo struct {
-	ConditionPC  vm.ExecPtr // PC pointing to start of condition expression
-	IsWeaklyFair bool       // true for funtil(), false for until()
+	ConditionPC    vm.ExecPtr // PC pointing to start of condition expression
+	IsWeaklyFair   bool       // true for funtil(), false for until()
+	IsStronglyFair bool       // true for sfuntil(), false for until()
 }
 
 type StackFrames []*StackFrame

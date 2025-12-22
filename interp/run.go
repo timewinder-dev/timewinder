@@ -142,14 +142,29 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 			// NEW: Use Runnable/Blocked instead of old pause reasons
 			var pause Pause
 			var weaklyFair bool
+			var stronglyFair bool
 
 			// Check if this thread is configured as fair
 			threadIsFair := s.ThreadSets[thread.SetIdx].Fair
+			threadIsStrongFair := s.ThreadSets[thread.SetIdx].StrongFair
 
 			yieldType := YieldType(n)
 
-			// If thread is fair, upgrade yield to weakly fair variant
-			if threadIsFair {
+			// Auto-upgrade based on thread configuration
+			// Strong fairness supersedes weak fairness
+			if threadIsStrongFair {
+				switch yieldType {
+				case YieldNormal:
+					yieldType = YieldStronglyFair
+				case YieldWaiting:
+					yieldType = YieldStronglyFairWaiting
+				case YieldWeaklyFair:
+					yieldType = YieldStronglyFair // Strong supersedes weak
+				case YieldWeaklyFairWaiting:
+					yieldType = YieldStronglyFairWaiting // Strong supersedes weak
+				}
+			} else if threadIsFair {
+				// If thread is fair, upgrade yield to weakly fair variant
 				switch yieldType {
 				case YieldNormal:
 					yieldType = YieldWeaklyFair
@@ -159,22 +174,35 @@ func RunToPause(prog *vm.Program, s *State, thread ThreadID) ([]vm.Value, error)
 			}
 
 			switch yieldType {
-			case YieldWaiting:
-				pause = Blocked // NEW: was Waiting
+			case YieldStronglyFair:
+				pause = Runnable
 				weaklyFair = false
-			case YieldWeaklyFairWaiting:
-				pause = Blocked // NEW: was WeaklyFairWaiting
-				weaklyFair = true
+				stronglyFair = true
+			case YieldStronglyFairWaiting:
+				pause = Blocked
+				weaklyFair = false
+				stronglyFair = true
 			case YieldWeaklyFair:
-				pause = Runnable // NEW: was WeaklyFairYield
+				pause = Runnable
 				weaklyFair = true
-			default:
-				pause = Runnable // NEW: was Yield
+				stronglyFair = false
+			case YieldWeaklyFairWaiting:
+				pause = Blocked
+				weaklyFair = true
+				stronglyFair = false
+			case YieldWaiting:
+				pause = Blocked
 				weaklyFair = false
+				stronglyFair = false
+			default:
+				pause = Runnable
+				weaklyFair = false
+				stronglyFair = false
 			}
-			log.Trace().Interface("thread", thread).Str("pause", pause.String()).Bool("weakly_fair", weaklyFair).Bool("thread_is_fair", threadIsFair).Msg("RunToPause: thread yielded")
+			log.Trace().Interface("thread", thread).Str("pause", pause.String()).Bool("weakly_fair", weaklyFair).Bool("strongly_fair", stronglyFair).Bool("thread_is_fair", threadIsFair).Bool("thread_is_strong_fair", threadIsStrongFair).Msg("RunToPause: thread yielded")
 			s.SetPauseReason(thread, pause)
 			s.SetWeaklyFair(thread, weaklyFair)
+			s.SetStronglyFair(thread, stronglyFair)
 			return nil, nil
 		default:
 			panic("unhandled intermediate step")

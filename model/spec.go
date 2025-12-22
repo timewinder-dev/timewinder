@@ -27,8 +27,9 @@ type SpecDetails struct {
 
 type ThreadSpec struct {
 	Entrypoint string `toml:"entrypoint,omitempty"`
-	Replicas   int    `toml:"replicas,omitempty"` // Number of symmetric replicas (default: 1)
-	Fair       bool   `toml:"fair,omitempty"`     // If true, use weakly fair semantics (step->fstep, until->funtil)
+	Replicas   int    `toml:"replicas,omitempty"`   // Number of symmetric replicas (default: 1)
+	Fair       bool   `toml:"fair,omitempty"`       // If true, use weakly fair semantics (step->fstep, until->funtil)
+	StrongFair bool   `toml:"strong_fair,omitempty"` // If true, use strongly fair semantics (step->sfstep, until->sfuntil)
 }
 
 type PropertySpec struct {

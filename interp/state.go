@@ -62,6 +62,60 @@ func (s *State) SetWeaklyFair(tid ThreadID, weaklyFair bool) {
 	s.ThreadSets[tid.SetIdx].WeaklyFair[tid.LocalIdx] = weaklyFair
 }
 
+// GetStronglyFair returns whether the thread's last yield was strongly fair (from sfstep)
+func (s *State) GetStronglyFair(tid ThreadID) bool {
+	// Return false if StronglyFair array doesn't exist (for backward compatibility)
+	if s.ThreadSets[tid.SetIdx].StronglyFair == nil {
+		return false
+	}
+	return s.ThreadSets[tid.SetIdx].StronglyFair[tid.LocalIdx]
+}
+
+// SetStronglyFair sets whether the thread's last yield was strongly fair
+func (s *State) SetStronglyFair(tid ThreadID, stronglyFair bool) {
+	// Initialize StronglyFair array if it doesn't exist
+	if s.ThreadSets[tid.SetIdx].StronglyFair == nil {
+		s.ThreadSets[tid.SetIdx].StronglyFair = make([]bool, len(s.ThreadSets[tid.SetIdx].Stacks))
+	}
+	s.ThreadSets[tid.SetIdx].StronglyFair[tid.LocalIdx] = stronglyFair
+}
+
+// HasEnabledStronglyFairThreads returns true if any strongly fair threads are currently enabled
+// A thread is enabled if it's Runnable or Start
+// For Blocked threads, we conservatively treat them as enabled (actual condition check would require model package access)
+func (s *State) HasEnabledStronglyFairThreads() (bool, []ThreadID) {
+	var enabledSFThreads []ThreadID
+
+	for setIdx, threadSet := range s.ThreadSets {
+		for localIdx, reason := range threadSet.PauseReason {
+			tid := ThreadID{SetIdx: setIdx, LocalIdx: localIdx}
+
+			// Check if this thread is strongly fair
+			// A thread is strongly fair if:
+			// 1. Its ThreadSet is configured as strongly fair (StrongFair flag), OR
+			// 2. It has yielded with a strongly fair yield (GetStronglyFair returns true)
+			isStronglyFair := threadSet.StrongFair || s.GetStronglyFair(tid)
+			if !isStronglyFair {
+				continue
+			}
+
+			// Check if thread is enabled
+			switch reason {
+			case Runnable, Start:
+				// Thread is definitely enabled
+				enabledSFThreads = append(enabledSFThreads, tid)
+			case Blocked:
+				// Conservative: treat blocked strongly fair threads as potentially enabled
+				// The actual condition satisfaction check happens in BuildRunnable
+				// We err on the side of caution here to avoid false negatives
+				enabledSFThreads = append(enabledSFThreads, tid)
+			}
+		}
+	}
+
+	return len(enabledSFThreads) > 0, enabledSFThreads
+}
+
 func (s *State) Clone() *State {
 	out := &State{
 		Globals:    s.Globals.Clone(),
@@ -88,10 +142,20 @@ func (s *State) Clone() *State {
 			copy(weaklyFair, ts.WeaklyFair)
 		}
 
+		// Copy strongly fair flags
+		var stronglyFair []bool
+		if ts.StronglyFair != nil {
+			stronglyFair = make([]bool, len(ts.StronglyFair))
+			copy(stronglyFair, ts.StronglyFair)
+		}
+
 		out.ThreadSets[i] = ThreadSet{
-			Stacks:      stacks,
-			PauseReason: pauseReasons,
-			WeaklyFair:  weaklyFair,
+			Stacks:       stacks,
+			PauseReason:  pauseReasons,
+			WeaklyFair:   weaklyFair,
+			StronglyFair: stronglyFair,
+			Fair:         ts.Fair,
+			StrongFair:   ts.StrongFair,
 		}
 	}
 	return out

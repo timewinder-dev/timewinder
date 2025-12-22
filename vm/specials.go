@@ -10,10 +10,20 @@ import (
 type Special string
 
 const (
-	Step   Special = "step"
-	FStep  Special = "fstep"
-	Until  Special = "until"
-	FUntil Special = "funtil"
+	Step    Special = "step"
+	FStep   Special = "fstep"
+	Until   Special = "until"
+	FUntil  Special = "funtil"
+	SFStep  Special = "sfstep"   // Strongly fair step
+	SFUntil Special = "sfuntil"  // Strongly fair wait
+)
+
+type FairnessType int
+
+const (
+	NormalFairness FairnessType = iota
+	WeakFairness
+	StrongFairness
 )
 
 var allSpecials = []Special{
@@ -21,6 +31,8 @@ var allSpecials = []Special{
 	FStep,
 	Until,
 	FUntil,
+	SFStep,
+	SFUntil,
 }
 
 
@@ -65,21 +77,42 @@ func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
 		cc.emit(PUSH, StrValue(v.Value.(string)))
 		// Then yield with weak fairness (arg is for tracing/debugging)
 		cc.emit(FAIR_YIELD, StrValue(v.Value.(string)))
+	case SFStep:
+		if len(call.Args) > 1 {
+			return true, fmt.Errorf("Too many arguments to %s, must be a string", fn.Name)
+		} else if len(call.Args) == 0 {
+			return true, fmt.Errorf("No arguments to %s, must label the step", fn.Name)
+		} else if _, ok := call.Args[0].(*syntax.Literal); !ok {
+			return true, fmt.Errorf("Argument to %s is not a literal value", fn.Name)
+		}
+		v := call.Args[0].(*syntax.Literal)
+		if v.Token != syntax.STRING {
+			return true, fmt.Errorf("Argument to %s is not a literal string label", fn.Name)
+		}
+		// Push the step name to stack first (for ExprStmt POP to consume)
+		cc.emit(PUSH, StrValue(v.Value.(string)))
+		// Then yield with strong fairness (arg is for tracing/debugging)
+		cc.emit(STRONG_YIELD, StrValue(v.Value.(string)))
 	case Until:
-		return cc.compileUntil(call, false)
+		return cc.compileUntil(call, NormalFairness)
 	case FUntil:
-		return cc.compileUntil(call, true)
+		return cc.compileUntil(call, WeakFairness)
+	case SFUntil:
+		return cc.compileUntil(call, StrongFairness)
 	default:
 		return true, fmt.Errorf("Unhandled special: %s", fn.Name)
 	}
 	return true, nil
 }
 
-func (cc *compileContext) compileUntil(call *syntax.CallExpr, isWeaklyFair bool) (bool, error) {
+func (cc *compileContext) compileUntil(call *syntax.CallExpr, fairness FairnessType) (bool, error) {
 	if len(call.Args) != 1 {
 		funcName := "until"
-		if isWeaklyFair {
+		switch fairness {
+		case WeakFairness:
 			funcName = "funtil"
+		case StrongFairness:
+			funcName = "sfuntil"
 		}
 		return true, fmt.Errorf("%s takes exactly 1 argument (condition expression), got %d", funcName, len(call.Args))
 	}
@@ -94,12 +127,15 @@ func (cc *compileContext) compileUntil(call *syntax.CallExpr, isWeaklyFair bool)
 		return true, err
 	}
 
-	// Emit conditional yield with retry label
-	// Note: CONDITIONAL_YIELD/CONDITIONAL_FAIR_YIELD consume the condition value
-	if isWeaklyFair {
-		cc.emit(CONDITIONAL_FAIR_YIELD, StrValue(condStartLabel))
-	} else {
+	// Emit conditional yield with retry label based on fairness type
+	// Note: CONDITIONAL_* opcodes consume the condition value
+	switch fairness {
+	case NormalFairness:
 		cc.emit(CONDITIONAL_YIELD, StrValue(condStartLabel))
+	case WeakFairness:
+		cc.emit(CONDITIONAL_FAIR_YIELD, StrValue(condStartLabel))
+	case StrongFairness:
+		cc.emit(CONDITIONAL_STRONG_YIELD, StrValue(condStartLabel))
 	}
 
 	// Push None to leave a value on stack (for ExprStmt POP to consume)

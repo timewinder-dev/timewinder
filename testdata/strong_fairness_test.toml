@@ -1,0 +1,12 @@
+[spec]
+file = "strong_fairness_test.star"
+
+[threads.incrementer]
+entrypoint = "incrementer()"
+strong_fair = true  # Mark this thread as strongly fair
+
+[threads.observer]
+entrypoint = "observer()"
+
+[properties]
+CounterIncremented = {Eventually = "counter['value'] > 0"}

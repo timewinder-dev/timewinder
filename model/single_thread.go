@@ -144,6 +144,17 @@ func formatDepthReport(depth, explored, pruned, remaining int, elapsed time.Dura
 func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, stateHash cas.Hash) error {
 	fmt.Fprintf(s.Executor.DebugWriter, "State already visited (pruning this branch)\n")
 
+	// FIRST: Check for strongly fair threads
+	// If strongly fair threads are enabled in a cycle, this is NOT a valid cycle
+	// We prune this branch by returning nil without error
+	hasStronglyFairEnabled, sfThreads := st.HasEnabledStronglyFairThreads()
+	if hasStronglyFairEnabled {
+		log.Debug().
+			Interface("strongly_fair_threads", sfThreads).
+			Msg("handleCyclicState: invalid cycle - strongly fair threads still enabled, pruning branch")
+		return nil // Prune this branch silently
+	}
+
 	// Check if this is a true cycle within the current trace
 	// (i.e., does this state appear earlier in THIS trace?)
 	isTrueCycle := false
@@ -214,6 +225,17 @@ func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, state
 func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) error {
 	fmt.Fprintf(s.Executor.DebugWriter, "Terminating state (no runnable threads)\n")
 
+	// FIRST: Check for strongly fair threads
+	// If strongly fair threads are enabled, this is NOT a valid termination point
+	// We prune this branch by returning nil without error
+	hasStronglyFairEnabled, sfThreads := st.HasEnabledStronglyFairThreads()
+	if hasStronglyFairEnabled {
+		log.Debug().
+			Interface("strongly_fair_threads", sfThreads).
+			Msg("handleTerminatingState: invalid termination - strongly fair threads still enabled, pruning branch")
+		return nil // Prune this branch silently
+	}
+
 	// Check for deadlock: no runnable threads but not all threads finished
 	if !s.Executor.NoDeadlocks {
 		allFinished := true
@@ -243,20 +265,33 @@ func (s *SingleThreadEngine) handleTerminatingState(t *Thunk, st *interp.State) 
 }
 
 // handleStutterCheck checks temporal properties as if the process terminates at this state
-// This is skipped for WeaklyFairYield states (weak fairness assumption)
+// This is skipped for WeaklyFairYield and StronglyFairYield states (fairness assumption)
 func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*ModelResult, error) {
 	w := s.Executor.DebugWriter
 	threadPauseReason := st.GetPauseReason(t.ToRun)
 	weaklyFair := st.GetWeaklyFair(t.ToRun)
+	stronglyFair := st.GetStronglyFair(t.ToRun)
+
+	// FIRST: Check if ANY strongly fair threads are enabled globally
+	// If so, skip stutter check entirely (invalid termination point)
+	hasStronglyFairEnabled, sfThreads := st.HasEnabledStronglyFairThreads()
+	if hasStronglyFairEnabled {
+		log.Debug().
+			Interface("strongly_fair_threads", sfThreads).
+			Msg("handleStutterCheck: skipping stutter check - strongly fair threads still enabled")
+		return nil, nil
+	}
 
 	// Check stutter for:
-	// - Runnable with NOT weakly fair (normal step())
-	// - Blocked with NOT weakly fair (normal until())
+	// - Runnable with NOT weakly fair AND NOT strongly fair (normal step())
+	// - Blocked with NOT weakly fair AND NOT strongly fair (normal until())
 	// Skip for:
 	// - Runnable with weakly fair (fstep())
 	// - Blocked with weakly fair (funtil())
-	shouldCheck := ((threadPauseReason == interp.Runnable && !weaklyFair) ||
-		(threadPauseReason == interp.Blocked && !weaklyFair))
+	// - Runnable with strongly fair (sfstep())
+	// - Blocked with strongly fair (sfuntil())
+	shouldCheck := ((threadPauseReason == interp.Runnable && !weaklyFair && !stronglyFair) ||
+		(threadPauseReason == interp.Blocked && !weaklyFair && !stronglyFair))
 
 	if !shouldCheck || len(s.Executor.TemporalConstraints) == 0 {
 		return nil, nil

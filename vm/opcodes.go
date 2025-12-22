@@ -44,10 +44,12 @@ const (
 	CALL_METHOD // A B receiver methodName | arg: 2, calls receiver.methodName(A, B) |
 
 	// Here begin the opcodes that are unique to a VM that is trying to run through a search. They should add a value to the stack, but are hints to the execution.
-	YIELD              // Arg: step name. Pauses execution and maybe something else runs. Breaks atomicity of actions in a function.
-	FAIR_YIELD         // Arg: step name. Weakly fair yield (from fstep) - pauses but no stutter checking.
-	CONDITIONAL_YIELD       // TOS=bool. Arg: label. If false, pause as Waiting and store retry label. If true, continue.
-	CONDITIONAL_FAIR_YIELD  // TOS=bool. Arg: label. If false, pause as WeaklyFairWaiting and store retry label. If true, continue.
+	YIELD                    // Arg: step name. Pauses execution and maybe something else runs. Breaks atomicity of actions in a function.
+	FAIR_YIELD               // Arg: step name. Weakly fair yield (from fstep) - pauses but no stutter checking.
+	STRONG_YIELD             // Arg: step name. Strongly fair yield (from sfstep) - pauses but no stutter checking.
+	CONDITIONAL_YIELD        // TOS=bool. Arg: label. If false, pause as Waiting and store retry label. If true, continue.
+	CONDITIONAL_FAIR_YIELD   // TOS=bool. Arg: label. If false, pause as WeaklyFairWaiting and store retry label. If true, continue.
+	CONDITIONAL_STRONG_YIELD // TOS=bool. Arg: label. If false, pause as StronglyFairWaiting and store retry label. If true, continue.
 
 	LABEL
 	OpcodeMax
@@ -122,10 +124,14 @@ func (o Opcode) String() string {
 		return "YIELD"
 	case FAIR_YIELD:
 		return "FAIR_YIELD"
+	case STRONG_YIELD:
+		return "STRONG_YIELD"
 	case CONDITIONAL_YIELD:
 		return "CONDITIONAL_YIELD"
 	case CONDITIONAL_FAIR_YIELD:
 		return "CONDITIONAL_FAIR_YIELD"
+	case CONDITIONAL_STRONG_YIELD:
+		return "CONDITIONAL_STRONG_YIELD"
 		// Complete all uncovered opcodes
 	}
 	panic("Unnamed opcode")

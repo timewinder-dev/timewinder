@@ -1,4 +1,5 @@
-program = "testdata/practical_tla/ch6/ch6_termination.star"
+[spec]
+expected_error = "Termination"
 
 [threads.light]
 entrypoint = "light_process()"

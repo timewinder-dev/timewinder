@@ -85,7 +85,7 @@ func (e *Executor) Initialize() error {
 		return err
 	}
 	for name, s := range e.Spec.Threads {
-		err = e.spawnThread(name, s.Entrypoint, s.Replicas, s.Fair)
+		err = e.spawnThread(name, s.Entrypoint, s.Replicas, s.Fair, s.StrongFair)
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func (e *Executor) initializeProperties() error {
 	return nil
 }
 
-func (e *Executor) spawnThread(name string, entrypoint string, replicas int, fair bool) error {
+func (e *Executor) spawnThread(name string, entrypoint string, replicas int, fair bool, strongFair bool) error {
 	// Default to 1 replica if not specified
 	if replicas <= 0 {
 		replicas = 1
@@ -164,10 +164,12 @@ func (e *Executor) spawnThread(name string, entrypoint string, replicas int, fai
 
 	// Create a ThreadSet with the specified number of replicas
 	threadSet := interp.ThreadSet{
-		Stacks:      make([]interp.StackFrames, replicas),
-		PauseReason: make([]interp.Pause, replicas),
-		WeaklyFair:  make([]bool, replicas),
-		Fair:        fair,
+		Stacks:       make([]interp.StackFrames, replicas),
+		PauseReason:  make([]interp.Pause, replicas),
+		WeaklyFair:   make([]bool, replicas),
+		StronglyFair: make([]bool, replicas),
+		Fair:         fair,
+		StrongFair:   strongFair,
 	}
 
 	// Initialize each replica with the same entrypoint
