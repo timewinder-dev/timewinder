@@ -16,4 +16,4 @@ entrypoint = "worker()"
 
 [properties]
 # Verify that after all workers finish, counter equals the number of workers
-FinalCount = {EventuallyAlways = "final_count"}
+FinalCount = {EventuallyAlways = "final_count()"}

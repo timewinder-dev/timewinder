@@ -12,4 +12,4 @@ replicas = 3
 [properties]
 # Verify that after all workers finish, counter equals the number of workers
 # Note: This property will fail to demonstrate race conditions without proper synchronization
-FinalCount = {EventuallyAlways = "final_count"}
+FinalCount = {EventuallyAlways = "final_count()"}
