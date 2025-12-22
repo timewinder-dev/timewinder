@@ -1,0 +1,11 @@
+[spec]
+expected_error = "BoundedQueue"
+
+[threads.reader]
+entrypoint = "reader()"
+
+[threads.writer]
+entrypoint = "writer()"
+
+[properties]
+BoundedQueue = {Always = "bounded"}
