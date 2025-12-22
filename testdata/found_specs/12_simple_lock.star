@@ -8,8 +8,6 @@ critical_count = 0
 in_critical = [False, False]
 
 def process(pid):
-    global critical_count
-
     for iteration in range(3):
         # Acquire lock
         step("acquire")

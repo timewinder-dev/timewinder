@@ -9,8 +9,6 @@ seen = []
 is_unique = True
 
 def check_duplicates():
-    global index, is_unique
-
     while index < len(seq):
         step("check_element")
 

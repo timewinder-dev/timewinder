@@ -99,12 +99,27 @@ When converting from PlusCal to Timewinder:
 
 1. **step()** replaces label boundaries - marks atomic operation boundaries
 2. **until()** replaces await - busy-wait condition checking
-3. **Global variables** - Starlark uses explicit global declarations
+3. **Global-first scoping** - Timewinder uses global-first variable lookup. Variables are resolved in global scope first, then local scope. No `global` keyword is needed or supported.
 4. **Loops** - Often bounded in Timewinder to ensure termination
 5. **Sets** - Converted to Python lists (sets not directly supported)
 6. **Sequences** - Converted to Python lists
 7. **Process parameters** - Converted to function parameters
 8. **Fairness** - Expressed via `fair = true` in TOML spec files
+
+### Scoping Rules
+
+Timewinder uses **global-first scoping**:
+- When you assign to a variable, Timewinder first checks if it exists in the global scope
+- If it exists globally, the global variable is modified
+- If not, a new local variable is created
+- This means you can modify global variables directly from functions without any `global` keyword
+- Example:
+  ```python
+  counter = 0
+
+  def increment():
+      counter = counter + 1  # Modifies the global counter
+  ```
 
 ## Running Examples
 

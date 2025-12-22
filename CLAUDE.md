@@ -84,6 +84,37 @@ def withdraw(amount):
 
 Between steps, other threads can interleave, allowing the model checker to explore race conditions.
 
+### Scoping Rules (Global-First)
+
+**IMPORTANT**: Timewinder uses **global-first scoping**, which differs from standard Python/Starlark:
+
+- When assigning to a variable (`x = value`), Timewinder first checks if `x` exists in the global scope
+- If it exists globally, the global variable is modified
+- If not, a new local variable is created
+- **No `global` keyword is needed or supported** - it will cause a syntax error
+- This makes it easy to write concurrent programs that modify shared state
+
+**Example:**
+```python
+counter = 0  # Global variable
+
+def increment():
+    counter = counter + 1  # Modifies the global counter (no 'global' needed!)
+
+def process():
+    local_var = 5  # Creates a local variable
+    counter = counter + 1  # Still modifies the global counter
+```
+
+**Why this design?**
+- Simplifies writing concurrent programs with shared state
+- Matches the mental model of TLA+ and PlusCal where variables are inherently global
+- Reduces boilerplate in specifications
+
+**Caveat:**
+- If you accidentally use the same name as a global variable, you'll modify the global instead of creating a local
+- Use distinct names for local variables to avoid confusion
+
 ### Properties
 
 Properties are expressions evaluated on each state:

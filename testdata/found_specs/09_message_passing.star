@@ -13,8 +13,6 @@ def sender():
     channel.append("world")
 
 def receiver():
-    global received
-
     while received < 2:
         step("try_receive")
 

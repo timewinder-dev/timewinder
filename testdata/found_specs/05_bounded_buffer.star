@@ -11,8 +11,6 @@ produced = 0
 consumed = 0
 
 def producer():
-    global produced
-
     while produced < MAX_ITEMS:
         # Try to produce
         step("try_produce")
@@ -22,8 +20,6 @@ def producer():
             buf.append(produced)
 
 def consumer():
-    global consumed
-
     while consumed < MAX_ITEMS:
         # Try to consume
         step("try_consume")

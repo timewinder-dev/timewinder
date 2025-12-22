@@ -8,8 +8,6 @@ writing = False
 data = 0
 
 def reader():
-    global readers
-
     # Enter read section
     step("enter_read")
     until(not writing)
@@ -24,8 +22,6 @@ def reader():
     readers = readers - 1
 
 def writer():
-    global writing, data
-
     # Enter write section
     step("enter_write")
     until(not writing and readers == 0)
