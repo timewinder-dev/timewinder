@@ -14,15 +14,19 @@ const (
 	SWAP    // A B | | B A
 	DUP     // A | | A A
 
-	ADD      // A B | C = A + B | C
-	SUBTRACT // A B | C = A - B | C
-	MULTIPLY // A B | C = A * B | C
-	DIVIDE   // A B | C = A / B | C
+	ADD         // A B | C = A + B | C
+	SUBTRACT    // A B | C = A - B | C
+	MULTIPLY    // A B | C = A * B | C
+	DIVIDE      // A B | C = A / B | C
+	MODULO      // A B | C = A % B | C
+	FLOOR_DIVIDE // A B | C = A // B | C
+	POWER       // A B | C = A ** B | C
 
 	EQ  // A B | C = A == B | C
 	LT  // A B | C = A < B | C
 	LTE // A B | C = A <= B | C
 	NOT // A | B = not A | B
+	IN  // A B | C = A in B | C
 
 	SLICE // Array Start End | Result = Array[Start:End] | Result (None for start/end means beginning/end)
 
@@ -76,6 +80,12 @@ func (o Opcode) String() string {
 		return "MULTIPLY"
 	case DIVIDE:
 		return "DIVIDE"
+	case MODULO:
+		return "MODULO"
+	case FLOOR_DIVIDE:
+		return "FLOOR_DIVIDE"
+	case POWER:
+		return "POWER"
 	case LT:
 		return "LT"
 	case LTE:
@@ -84,6 +94,8 @@ func (o Opcode) String() string {
 		return "EQ"
 	case NOT:
 		return "NOT"
+	case IN:
+		return "IN"
 	case SLICE:
 		return "SLICE"
 	case JMP:

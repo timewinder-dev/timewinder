@@ -435,8 +435,10 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 		cc.emit(MULTIPLY)
 	case syntax.SLASH: // /
 		cc.emit(DIVIDE)
-	//case syntax.SLASHSLASH: // //
-	//case syntax.PERCENT: // %
+	case syntax.SLASHSLASH: // //
+		cc.emit(FLOOR_DIVIDE)
+	case syntax.PERCENT: // %
+		cc.emit(MODULO)
 	//case syntax.AMP: // &
 	//case syntax.PIPE: // |
 	//case syntax.CIRCUMFLEX: // ^
@@ -480,7 +482,8 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 	//case syntax.CIRCUMFLEX_EQ: // ^=
 	//case syntax.LTLT_EQ: // <<=
 	//case syntax.GTGT_EQ: // >>=
-	//case syntax.STARSTAR: // **
+	case syntax.STARSTAR: // **
+		cc.emit(POWER)
 
 	//// Keywords
 	//case syntax.AND:
@@ -491,11 +494,14 @@ func (cc *compileContext) binOp(op syntax.Token) error {
 	//case syntax.ELSE:
 	//case syntax.FOR:
 	//case syntax.IF:
-	//case syntax.IN:
+	case syntax.IN:
+		cc.emit(IN)
 	//case syntax.LAMBDA:
 	//case syntax.LOAD:
 	//case syntax.NOT:
-	//case syntax.NOT_IN: // synthesized by parser from NOT IN
+	case syntax.NOT_IN: // synthesized by parser from NOT IN
+		cc.emit(IN)
+		cc.emit(NOT)
 	//case syntax.OR:
 	//case syntax.PASS:
 	//case syntax.RETURN:

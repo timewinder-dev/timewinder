@@ -45,6 +45,12 @@ func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value
 		if newf != nil {
 			frames = append(frames, newf)
 		}
+		case MethodCallStep:
+			err := BuildMethodCallFrame(frames[len(frames)-1], n)
+			if err != nil {
+				return nil, err
+			}
+			// BuildMethodCallFrame already incremented PC, just continue
 		}
 	}
 }

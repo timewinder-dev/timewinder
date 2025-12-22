@@ -3,7 +3,9 @@ package interp
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/timewinder-dev/timewinder/vm"
@@ -168,6 +170,12 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		fallthrough
 	case vm.DIVIDE:
 		fallthrough
+	case vm.MODULO:
+		fallthrough
+	case vm.FLOOR_DIVIDE:
+		fallthrough
+	case vm.POWER:
+		fallthrough
 	case vm.SUBTRACT:
 		b := frame.Pop()
 		a := frame.Pop()
@@ -228,6 +236,54 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		}
 		frame.Push(result)
 		log.Trace().Interface("a", a).Interface("b", b).Interface("result", result).Interface("stack", frame.Stack).Msg("  LTE")
+	case vm.IN:
+		// Stack: item collection -> bool (item in collection)
+		collection := frame.Pop()
+		item := frame.Pop()
+
+		var result vm.Value
+		switch coll := collection.(type) {
+		case vm.ArrayValue:
+			// Check if item is in array
+			found := false
+			for _, elem := range coll {
+				if eq, ok := item.Cmp(elem); ok && eq == 0 {
+					found = true
+					break
+				}
+			}
+			if found {
+				result = vm.BoolTrue
+			} else {
+				result = vm.BoolFalse
+			}
+		case vm.StrValue:
+			// Check if substring is in string
+			itemStr, ok := item.(vm.StrValue)
+			if !ok {
+				return ErrorStep, 0, fmt.Errorf("IN operator: can only check for string in string, got %T in string", item)
+			}
+			if strings.Contains(string(coll), string(itemStr)) {
+				result = vm.BoolTrue
+			} else {
+				result = vm.BoolFalse
+			}
+		case vm.StructValue:
+			// Check if key is in dict/struct
+			itemStr, ok := item.(vm.StrValue)
+			if !ok {
+				return ErrorStep, 0, fmt.Errorf("IN operator: can only check for string keys in struct, got %T", item)
+			}
+			if _, exists := coll[string(itemStr)]; exists {
+				result = vm.BoolTrue
+			} else {
+				result = vm.BoolFalse
+			}
+		default:
+			return ErrorStep, 0, fmt.Errorf("IN operator: unsupported collection type %T", collection)
+		}
+		frame.Push(result)
+		log.Trace().Interface("item", item).Interface("collection", collection).Interface("result", result).Msg("  IN")
 	case vm.SLICE:
 		// Stack: Array Start End -> Result
 		// None for start means 0, None for end means len(array)
@@ -692,6 +748,12 @@ func floatOp(op vm.Opcode, a, b float64) vm.Value {
 		return vm.FloatValue(a * b)
 	case vm.DIVIDE:
 		return vm.FloatValue(a / b)
+	case vm.MODULO:
+		return vm.FloatValue(math.Mod(a, b))
+	case vm.FLOOR_DIVIDE:
+		return vm.FloatValue(math.Floor(a / b))
+	case vm.POWER:
+		return vm.FloatValue(math.Pow(a, b))
 	}
 	panic("Unhandled floatOp code")
 }
@@ -706,6 +768,12 @@ func intOp(op vm.Opcode, a, b int) vm.Value {
 		return vm.IntValue(a * b)
 	case vm.DIVIDE:
 		return vm.IntValue(a / b)
+	case vm.MODULO:
+		return vm.IntValue(a % b)
+	case vm.FLOOR_DIVIDE:
+		return vm.IntValue(a / b) // Integer division is already floor division in Go
+	case vm.POWER:
+		return vm.IntValue(int(math.Pow(float64(a), float64(b))))
 	}
 	panic("Unhandled intOp code")
 }
