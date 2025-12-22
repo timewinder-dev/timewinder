@@ -131,6 +131,8 @@ func CompileExpr(expr string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Add RETURN instruction so RunToEnd returns the expression value instead of None
+	cc.emit(RETURN)
 	return cc.intoProgram()
 }
 

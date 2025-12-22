@@ -1,0 +1,13 @@
+[spec]
+file = "ch6_termination.star"
+
+[threads.light]
+entrypoint = "light_process()"
+
+[threads.car]
+entrypoint = "car_process()"
+fair = true  # Car thread uses weak fairness - will eventually get to run when light is green
+
+[properties]
+# Car eventually drives away (termination condition)
+CarDrives = { Eventually = "not at_light" }

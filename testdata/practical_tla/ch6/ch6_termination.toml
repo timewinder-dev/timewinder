@@ -1,0 +1,11 @@
+program = "testdata/practical_tla/ch6/ch6_termination.star"
+
+[threads.light]
+entrypoint = "light_process()"
+
+[threads.car]
+entrypoint = "car_process()"
+
+[properties]
+# Car eventually drives away (termination condition)
+#CarDrives = { Eventually = "not at_light" }

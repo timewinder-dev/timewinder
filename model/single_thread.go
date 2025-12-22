@@ -155,46 +155,49 @@ func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, state
 		}
 	}
 
+	// Check all threads finished status (used for both deadlock and termination checks)
+	allFinished := true
+	flatIdx := 0
+	for _, threadSet := range st.ThreadSets {
+		for _, reason := range threadSet.PauseReason {
+			if reason != interp.Finished {
+				allFinished = false
+				if !s.Executor.NoDeadlocks && reason == interp.Blocked {
+					fmt.Fprintf(s.Executor.DebugWriter, "  Thread %d is waiting (potential deadlock)\n", flatIdx)
+				}
+			}
+			flatIdx++
+		}
+	}
+
 	// Check for deadlock even in cyclic states
 	// (threads may be stuck in a cycle of waiting states)
-	if !s.Executor.NoDeadlocks {
-		allFinished := true
-		flatIdx := 0
-		for _, threadSet := range st.ThreadSets {
-			for _, reason := range threadSet.PauseReason {
-				if reason != interp.Finished {
-					allFinished = false
-					if reason == interp.Blocked {
-						fmt.Fprintf(s.Executor.DebugWriter, "  Thread %d is waiting (potential deadlock)\n", flatIdx)
-					}
-				}
-				flatIdx++
+	if !s.Executor.NoDeadlocks && !allFinished {
+		// Build successors to check if any threads are truly runnable
+		// (evaluateWaitCondition checks if wait conditions are satisfied)
+		queueLen := 0
+		if queueVal, ok := st.Globals.Variables["queue"]; ok {
+			if arr, ok := queueVal.(vm.ArrayValue); ok {
+				queueLen = len(arr)
 			}
 		}
+		log.Debug().Int("queue_len", queueLen).Msg("handleCyclicState: checking if threads can make progress")
+		successors, err := BuildRunnable(t, st, s.Executor)
+		if err != nil {
+			return err
+		}
+		log.Debug().Int("num_successors", len(successors)).Msg("handleCyclicState: BuildRunnable returned")
+		if len(successors) == 0 {
+			// No threads can make progress = deadlock
+			return fmt.Errorf("Deadlock detected: no threads can make progress, but not all threads have finished")
+		} else {
+			log.Debug().Int("num_successors", len(successors)).Msg("handleCyclicState: threads can make progress, not a deadlock")
+		}
+	}
 
-		// If not all finished, check if any waiting threads can actually make progress
-		if !allFinished {
-			// Build successors to check if any threads are truly runnable
-			// (evaluateWaitCondition checks if wait conditions are satisfied)
-			queueLen := 0
-			if queueVal, ok := st.Globals.Variables["queue"]; ok {
-				if arr, ok := queueVal.(vm.ArrayValue); ok {
-					queueLen = len(arr)
-				}
-			}
-			log.Debug().Int("queue_len", queueLen).Msg("handleCyclicState: checking if threads can make progress")
-			successors, err := BuildRunnable(t, st, s.Executor)
-			if err != nil {
-				return err
-			}
-			log.Debug().Int("num_successors", len(successors)).Msg("handleCyclicState: BuildRunnable returned")
-			if len(successors) == 0 {
-				// No threads can make progress = deadlock
-				return fmt.Errorf("Deadlock detected: no threads can make progress, but not all threads have finished")
-			} else {
-				log.Debug().Int("num_successors", len(successors)).Msg("handleCyclicState: threads can make progress, not a deadlock")
-			}
-		}
+	// Check for termination violation: cycle detected but not all threads finished
+	if !s.Executor.NoTermination && isTrueCycle && !allFinished {
+		return fmt.Errorf("Termination violation: cycle detected but not all threads have finished")
 	}
 
 	// Only check temporal constraints if this is a true cycle within the trace

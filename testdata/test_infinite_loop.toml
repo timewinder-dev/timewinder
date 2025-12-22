@@ -1,0 +1,4 @@
+program = "testdata/test_infinite_loop.star"
+
+[threads.worker]
+entrypoint = "infinite_loop()"

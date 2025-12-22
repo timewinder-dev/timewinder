@@ -19,13 +19,16 @@ type Spec struct {
 }
 
 type SpecDetails struct {
-	File          string `toml:",omitempty"`
-	ExpectedError string `toml:"expected_error,omitempty"` // If set, expect a violation/error containing this substring
+	File           string `toml:",omitempty"`
+	ExpectedError  string `toml:"expected_error,omitempty"`  // If set, expect a violation/error containing this substring
+	NoDeadlocks    bool   `toml:"no_deadlocks,omitempty"`    // If true, disable deadlock detection (default: false, deadlocks are checked)
+	NoTermination  bool   `toml:"no_termination,omitempty"`  // If true, disable termination checking (default: false, termination is checked)
 }
 
 type ThreadSpec struct {
-	Entrypoint string `toml:",omitempty"`
-	Replicas   int    `toml:",omitempty"` // Number of symmetric replicas (default: 1)
+	Entrypoint string `toml:"entrypoint,omitempty"`
+	Replicas   int    `toml:"replicas,omitempty"` // Number of symmetric replicas (default: 1)
+	Fair       bool   `toml:"fair,omitempty"`     // If true, use weakly fair semantics (step->fstep, until->funtil)
 }
 
 type PropertySpec struct {
@@ -106,10 +109,12 @@ func (s *Spec) BuildExecutor(casStore cas.CAS) (*Executor, error) {
 		return nil, err
 	}
 	exec := &Executor{
-		Program:     p,
-		Spec:        s,
-		DebugWriter: io.Discard, // Default to silent; CLI can override
-		CAS:         casStore,
+		Program:       p,
+		Spec:          s,
+		DebugWriter:   io.Discard, // Default to silent; CLI can override
+		CAS:           casStore,
+		NoDeadlocks:   s.Spec.NoDeadlocks,   // Initialize from spec (CLI can override)
+		NoTermination: s.Spec.NoTermination, // Initialize from spec (CLI can override)
 	}
 
 	// Build properties with temporal constraints

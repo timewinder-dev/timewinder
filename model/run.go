@@ -275,8 +275,7 @@ func CheckTemporalConstraints(t *Thunk, finalState *interp.State, exec *Executor
 		case EventuallyAlways:
 			result, err = checkEventuallyAlways(constraint, stateHashes, exec.CAS, isCycle)
 		case Eventually:
-			// Future: implement Eventually
-			continue
+			result, err = checkEventually(constraint, stateHashes, exec.CAS, isCycle)
 		case AlwaysEventually:
 			// Future: implement AlwaysEventually
 			continue
@@ -293,6 +292,65 @@ func CheckTemporalConstraints(t *Thunk, finalState *interp.State, exec *Executor
 	}
 
 	return nil
+}
+
+// checkEventually implements the Eventually (◇P) operator
+// Checks if there exists at least one state where the property is true
+func checkEventually(constraint TemporalConstraint, stateHashes []interface{}, casStore cas.CAS, isCycle bool) (PropertyResult, error) {
+	n := len(stateHashes)
+	if n == 0 {
+		return PropertyResult{Success: false, Name: constraint.Name, Message: "Empty trace"}, nil
+	}
+
+	// Evaluate property at each state in the trace
+	for i, hashInterface := range stateHashes {
+		// Type assert the hash to cas.Hash
+		var hash cas.Hash
+		switch h := hashInterface.(type) {
+		case cas.Hash:
+			hash = h
+		default:
+			return PropertyResult{}, fmt.Errorf("invalid hash type at position %d: %T", i, hashInterface)
+		}
+
+		// Retrieve state from CAS
+		state, err := cas.Retrieve[*interp.State](casStore, hash)
+		if err != nil {
+			return PropertyResult{}, fmt.Errorf("failed to retrieve state %d: %w", i, err)
+		}
+
+		// Evaluate property at this state
+		result, err := constraint.Property.Check(state)
+		if err != nil {
+			return PropertyResult{}, fmt.Errorf("error evaluating property at state %d: %w", i, err)
+		}
+
+		// If property is true at any state, Eventually is satisfied
+		if result.Success {
+			return PropertyResult{
+				Success: true,
+				Name:    constraint.Name,
+				Message: fmt.Sprintf("%s: property became true at state %d", constraint.Name, i),
+			}, nil
+		}
+	}
+
+	// Property was never true in the trace
+	if isCycle {
+		// This is a cycle where the property is never true - it will never become true
+		return PropertyResult{
+			Success: false,
+			Name:    constraint.Name,
+			Message: fmt.Sprintf("%s: property never becomes true (checked %d states in cycle)", constraint.Name, n),
+		}, nil
+	}
+
+	// Terminating trace where property never became true
+	return PropertyResult{
+		Success: false,
+		Name:    constraint.Name,
+		Message: fmt.Sprintf("%s: property never becomes true (checked %d states in terminating trace)", constraint.Name, n),
+	}, nil
 }
 
 // checkEventuallyAlways implements the EventuallyAlways (◇□P) operator

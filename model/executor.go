@@ -61,6 +61,7 @@ type Executor struct {
 	ShowDetails        bool                // Show detailed trace reconstruction
 	Violations         []PropertyViolation // Track all violations found
 	NoDeadlocks        bool                // Disable deadlock detection
+	NoTermination      bool                // Disable termination checking
 	MaxDepth           int                 // Maximum depth to explore (0 = unlimited)
 }
 
@@ -84,7 +85,7 @@ func (e *Executor) Initialize() error {
 		return err
 	}
 	for name, s := range e.Spec.Threads {
-		err = e.spawnThread(name, s.Entrypoint, s.Replicas)
+		err = e.spawnThread(name, s.Entrypoint, s.Replicas, s.Fair)
 		if err != nil {
 			return err
 		}
@@ -118,40 +119,44 @@ func (e *Executor) initializeGlobal() error {
 }
 
 func (e *Executor) initializeProperties() error {
-	// Initialize stack frames for each property using TemporalConstraints
+	// Initialize property expressions
 	for _, constraint := range e.TemporalConstraints {
 		if ip, ok := constraint.Property.(*InterpProperty); ok {
-			// Get the property function name from the spec based on operator
+			// Get the property expression from the spec based on operator
 			propSpec := e.Spec.Properties[constraint.Name]
-			var funcName string
+			var exprString string
 
 			switch constraint.Operator {
 			case Always:
-				funcName = propSpec.Always
+				exprString = propSpec.Always
 			case EventuallyAlways:
-				funcName = propSpec.EventuallyAlways
+				exprString = propSpec.EventuallyAlways
 			case Eventually:
-				funcName = propSpec.Eventually
+				exprString = propSpec.Eventually
 			case AlwaysEventually:
-				funcName = propSpec.AlwaysEventually
+				exprString = propSpec.AlwaysEventually
 			default:
 				return fmt.Errorf("unknown temporal operator: %s", constraint.Operator)
 			}
 
-			callExpr := funcName + "()"
+			// Store the expression string - it will be compiled and executed during Check()
+			// This works for both direct expressions ("balance >= 0") and function calls ("check()")
+			ip.ExprString = exprString
 
-			// Create a stack frame to call the property function
-			f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, callExpr)
-			if err != nil {
-				return err
+			// Validate that the expression is not empty and compiles
+			if exprString == "" {
+				return fmt.Errorf("property %s: empty expression for operator %s", constraint.Name, constraint.Operator)
 			}
-			ip.Start = f
+			_, err := vm.CompileExpr(exprString)
+			if err != nil {
+				return fmt.Errorf("property %s: invalid expression %q: %w", constraint.Name, exprString, err)
+			}
 		}
 	}
 	return nil
 }
 
-func (e *Executor) spawnThread(name string, entrypoint string, replicas int) error {
+func (e *Executor) spawnThread(name string, entrypoint string, replicas int, fair bool) error {
 	// Default to 1 replica if not specified
 	if replicas <= 0 {
 		replicas = 1
@@ -161,13 +166,15 @@ func (e *Executor) spawnThread(name string, entrypoint string, replicas int) err
 	threadSet := interp.ThreadSet{
 		Stacks:      make([]interp.StackFrames, replicas),
 		PauseReason: make([]interp.Pause, replicas),
+		WeaklyFair:  make([]bool, replicas),
+		Fair:        fair,
 	}
 
 	// Initialize each replica with the same entrypoint
 	for i := 0; i < replicas; i++ {
 		f, err := interp.FunctionCallFromString(e.Program, e.InitialState.Globals, entrypoint)
 		if err != nil {
-			return err
+			return fmt.Errorf("thread %s: failed to create entrypoint call: %w", name, err)
 		}
 		threadSet.Stacks[i] = interp.StackFrames{f}
 		threadSet.PauseReason[i] = interp.Start

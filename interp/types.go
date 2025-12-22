@@ -18,6 +18,7 @@ type ThreadSet struct {
 	Stacks       []StackFrames // Multiple threads in this set
 	PauseReason  []Pause       // Parallel to Stacks
 	WeaklyFair   []bool        // Parallel to Stacks - true if last yield was from fstep() (weakly fair)
+	Fair         bool          // If true, this thread set uses weakly fair semantics (step->fstep, until->funtil)
 }
 
 type State struct {

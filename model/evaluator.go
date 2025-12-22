@@ -18,16 +18,20 @@ type Property interface {
 }
 
 type InterpProperty struct {
-	Name     string
-	Start    *interp.StackFrame
-	Executor *Executor
+	Name       string
+	Executor   *Executor
+	ExprString string // The property expression to evaluate
 }
 
 func (ip *InterpProperty) Check(state *interp.State) (PropertyResult, error) {
-	// Clone the start frame so we don't modify the original
-	frame := ip.Start.Clone()
+	// Compile and execute the expression with the current state's globals
+	exprProg, err := vm.CompileExpr(ip.ExprString)
+	if err != nil {
+		return PropertyResult{}, fmt.Errorf("Property %s: failed to compile expression: %w", ip.Name, err)
+	}
 
-	val, err := interp.RunToEnd(ip.Executor.Program, state.Globals, frame)
+	frame := &interp.StackFrame{Stack: []vm.Value{}}
+	val, err := interp.RunToEnd(exprProg, state.Globals, frame)
 	if err != nil {
 		// Execution error - something went wrong running the property check
 		return PropertyResult{}, err
