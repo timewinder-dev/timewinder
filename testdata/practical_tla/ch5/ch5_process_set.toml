@@ -9,4 +9,4 @@ entrypoint = "reader()"
 entrypoint = "writer()"
 
 [properties]
-BoundedQueue = {Always = "bounded"}
+BoundedQueue = {Always = "bounded()"}

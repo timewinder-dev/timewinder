@@ -14,4 +14,4 @@ entrypoint = "main()"
 entrypoint = "main()"
 
 [properties]
-NoOverdrafts = {Always = "no_overdrafts"}
+NoOverdrafts = {Always = "no_overdrafts()"}

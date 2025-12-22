@@ -5,7 +5,7 @@ import (
 	"github.com/timewinder-dev/timewinder/vm"
 )
 
-func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value, error) {
+func RunToEnd(prog Program, global *StackFrame, start *StackFrame) (vm.Value, error) {
 	frames := []*StackFrame{start}
 	for {
 		c, n, err := Step(prog, global, frames)
@@ -37,7 +37,7 @@ func RunToEnd(prog *vm.Program, global *StackFrame, start *StackFrame) (vm.Value
 
 			}
 		case CallStep:
-			newf, err := BuildCallFrame(prog, frames[len(frames)-1], n)
+			newf, err := buildCallFrameWithProgram(prog, frames[len(frames)-1], n)
 			if err != nil {
 				return nil, err
 			}

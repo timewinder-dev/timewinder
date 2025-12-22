@@ -30,8 +30,15 @@ func (ip *InterpProperty) Check(state *interp.State) (PropertyResult, error) {
 		return PropertyResult{}, fmt.Errorf("Property %s: failed to compile expression: %w", ip.Name, err)
 	}
 
+	// Create an overlay that uses the expression's main but has access to all functions
+	// from the original program (same approach as FunctionCallFromString)
+	overlay := &interp.OverlayMain{
+		Program: ip.Executor.Program,
+		Main:    exprProg.Main,
+	}
+
 	frame := &interp.StackFrame{Stack: []vm.Value{}}
-	val, err := interp.RunToEnd(exprProg, state.Globals, frame)
+	val, err := interp.RunToEnd(overlay, state.Globals, frame)
 	if err != nil {
 		// Execution error - something went wrong running the property check
 		return PropertyResult{}, err

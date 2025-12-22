@@ -5,4 +5,4 @@ expected_error = "NoOverdrafts"
 entrypoint = "algorithm()"
 
 [properties]
-NoOverdrafts = {Always = "no_overdrafts"}
+NoOverdrafts = {Always = "no_overdrafts()"}

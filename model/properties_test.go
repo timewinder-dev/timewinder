@@ -52,14 +52,10 @@ func createTestProperty(t *testing.T, name string, expression string, globals ma
 		Program: prog,
 	}
 
-	// Create stack frame for calling the property
-	callFrame, err := interp.FunctionCallFromString(prog, state.Globals, name+"()")
-	require.NoError(t, err, "Failed to create function call")
-
 	prop := &InterpProperty{
-		Name:     name,
-		Start:    callFrame,
-		Executor: executor,
+		Name:       name,
+		ExprString: name + "()",
+		Executor:   executor,
 	}
 
 	return prop, state

@@ -15,5 +15,5 @@ entrypoint = "main()"
 entrypoint = "main()"
 
 [properties]
-NoOverdrafts = {Always = "no_overdrafts"}
-NoMoneyLost = {EventuallyAlways = "no_money_lost"}
+NoOverdrafts = {Always = "no_overdrafts()"}
+NoMoneyLost = {EventuallyAlways = "no_money_lost()"}
