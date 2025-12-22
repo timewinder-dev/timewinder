@@ -207,7 +207,7 @@ func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, state
 	}
 
 	// Check for termination violation: cycle detected but not all threads finished
-	if !s.Executor.NoTermination && isTrueCycle && !allFinished {
+	if s.Executor.Termination && isTrueCycle && !allFinished {
 		return fmt.Errorf("Termination violation: cycle detected but not all threads have finished")
 	}
 

@@ -1,5 +1,6 @@
 [spec]
 file = "ch6_termination.star"
+termination = true
 expected_error = "CarDrives"
 
 [threads.light]

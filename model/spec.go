@@ -22,7 +22,7 @@ type SpecDetails struct {
 	File           string `toml:",omitempty"`
 	ExpectedError  string `toml:"expected_error,omitempty"`  // If set, expect a violation/error containing this substring
 	NoDeadlocks    bool   `toml:"no_deadlocks,omitempty"`    // If true, disable deadlock detection (default: false, deadlocks are checked)
-	NoTermination  bool   `toml:"no_termination,omitempty"`  // If true, disable termination checking (default: false, termination is checked)
+	Termination    bool   `toml:"termination,omitempty"`     // If true, require all threads to terminate (default: false, infinite loops allowed)
 }
 
 type ThreadSpec struct {
@@ -114,8 +114,8 @@ func (s *Spec) BuildExecutor(casStore cas.CAS) (*Executor, error) {
 		Spec:          s,
 		DebugWriter:   io.Discard, // Default to silent; CLI can override
 		CAS:           casStore,
-		NoDeadlocks:   s.Spec.NoDeadlocks,   // Initialize from spec (CLI can override)
-		NoTermination: s.Spec.NoTermination, // Initialize from spec (CLI can override)
+		NoDeadlocks:   s.Spec.NoDeadlocks, // Initialize from spec (CLI can override)
+		Termination:   s.Spec.Termination, // Initialize from spec (CLI can override)
 	}
 
 	// Build properties with temporal constraints

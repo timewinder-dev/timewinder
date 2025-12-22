@@ -61,7 +61,7 @@ type Executor struct {
 	ShowDetails        bool                // Show detailed trace reconstruction
 	Violations         []PropertyViolation // Track all violations found
 	NoDeadlocks        bool                // Disable deadlock detection
-	NoTermination      bool                // Disable termination checking
+	Termination        bool                // Require all threads to terminate (default: false, infinite loops allowed)
 	MaxDepth           int                 // Maximum depth to explore (0 = unlimited)
 }
 

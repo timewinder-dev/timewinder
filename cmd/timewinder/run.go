@@ -16,15 +16,15 @@ import (
 )
 
 var (
-	debugFlag         bool
-	keepGoing         bool
-	detailsFlag       bool
-	noDeadlocksFlag   bool
-	noTerminationFlag bool
-	maxDepth          int
-	cpuProfile        string
-	memProfile        string
-	lruSize           int
+	debugFlag       bool
+	keepGoing       bool
+	detailsFlag     bool
+	noDeadlocksFlag bool
+	terminationFlag bool
+	maxDepth        int
+	cpuProfile      string
+	memProfile      string
+	lruSize         int
 )
 
 var runCmd = &cobra.Command{
@@ -39,7 +39,7 @@ func init() {
 	runCmd.Flags().BoolVar(&keepGoing, "keep-going", false, "Keep checking the model after reporting it's first error")
 	runCmd.Flags().BoolVar(&detailsFlag, "details", false, "Show detailed trace reconstruction when property violations occur")
 	runCmd.Flags().BoolVar(&noDeadlocksFlag, "no-deadlocks", false, "Disable deadlock detection (allow states where no threads can progress)")
-	runCmd.Flags().BoolVar(&noTerminationFlag, "no-termination", false, "Disable termination checking (allow infinite loops)")
+	runCmd.Flags().BoolVar(&terminationFlag, "termination", false, "Require all threads to terminate (reject infinite loops)")
 	runCmd.Flags().IntVar(&maxDepth, "max-depth", 0, "Maximum depth to explore (0 = unlimited)")
 	runCmd.Flags().StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile to specified file")
 	runCmd.Flags().StringVar(&memProfile, "memprofile", "", "Write memory profile to specified file")
@@ -128,8 +128,8 @@ func runCommand(cmd *cobra.Command, args []string) {
 	if noDeadlocksFlag {
 		exec.NoDeadlocks = true
 	}
-	if noTerminationFlag {
-		exec.NoTermination = true
+	if terminationFlag {
+		exec.Termination = true
 	}
 	if maxDepth > 0 {
 		exec.MaxDepth = maxDepth

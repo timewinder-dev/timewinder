@@ -1,4 +1,5 @@
 [spec]
+termination = true
 expected_error = "Termination"
 
 [threads.light]
