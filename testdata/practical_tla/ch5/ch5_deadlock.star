@@ -7,12 +7,10 @@ def bounded():
   return len(queue) <= max_queue_size
 
 def add_to_queue(val):
-  global_var("queue")
   until(len(queue) < max_queue_size)
   queue.append(val)
 
 def reader():
-  global_var("queue")
   while True:
     until(len(queue) != 0)
     current_msg = queue[0]

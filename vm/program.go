@@ -89,7 +89,7 @@ func (p *Program) GetFilename(ptr ExecPtr) string {
 type Function struct {
 	Bytecode  []Op
 	Params    []FunctionParam
-	LocalVars []string // Variables assigned anywhere in this function (JavaScript-like scoping)
+	LocalVars []string // UNUSED: Kept for compatibility, no longer used with new scoping rules
 	LineMap   []int    // Maps PC offset to source line number
 	Filename  string   // Source filename for this function
 }

@@ -3,7 +3,6 @@ package interp
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"sort"
 
 	"github.com/rs/zerolog/log"
@@ -77,33 +76,33 @@ func Step(program Program, globals *StackFrame, stack []*StackFrame) (StepResult
 		val := frame.Pop()
 		variable := mustString(name)
 
-		// Get current function to check if variable is local (JavaScript-like scoping)
-		currentFunc := program.GetFunction(frame.PC)
-		isLocal := currentFunc != nil && slices.Contains(currentFunc.LocalVars, variable)
+		// New scoping rules: unified namespace with shadowing detection
+		// Check if variable exists in both globals and local scope
+		var inGlobals bool
+		var inLocal bool
 
-		if isLocal {
-			// Variable is assigned somewhere in this function, so it's always local
-			frame.StoreVar(variable, val)
-			log.Trace().Str("variable", variable).Interface("value", val).Bool("is_local", true).Interface("stack", frame.Stack).Msg("  SETVAL")
+		// Check globals
+		if globals != nil {
+			_, inGlobals = globals.Variables[variable]
+		}
+
+		// Check current frame (local scope)
+		_, inLocal = frame.Variables[variable]
+
+		// Shadowing detection: error if variable exists in both scopes
+		if inGlobals && inLocal {
+			log.Trace().Str("variable", variable).Msg("  SETVAL: shadowing detected")
+			return ErrorStep, 0, fmt.Errorf("Variable shadowing detected: '%s' exists in both global and local scope", variable)
+		}
+
+		// Write to globals if variable exists there
+		if inGlobals {
+			globals.StoreVar(variable, val)
+			log.Trace().Str("variable", variable).Interface("value", val).Str("scope", "global").Interface("stack", frame.Stack).Msg("  SETVAL")
 		} else {
-			// Variable is not local - search frames and globals
-			saved := false
-			for i := len(stack) - 1; i >= 0; i-- {
-				if stack[i].Has(variable) {
-					stack[i].StoreVar(variable, val)
-					saved = true
-					break
-				}
-			}
-			if !saved && globals != nil {
-				// Store in globals (don't check if it exists first - always store)
-				globals.StoreVar(variable, val)
-				saved = true
-			}
-			if !saved {
-				frame.StoreVar(variable, val)
-			}
-			log.Trace().Str("variable", variable).Interface("value", val).Bool("is_local", false).Interface("stack", frame.Stack).Msg("  SETVAL")
+			// Write to local scope (create new local if needed)
+			frame.StoreVar(variable, val)
+			log.Trace().Str("variable", variable).Interface("value", val).Str("scope", "local").Interface("stack", frame.Stack).Msg("  SETVAL")
 		}
 	case vm.GETVAL:
 		name := frame.Pop()
@@ -677,20 +676,50 @@ func mustString(v vm.Value) string {
 }
 
 func resolveVar(name string, program Program, globals *StackFrame, stack []*StackFrame) (vm.Value, error) {
-	for i := len(stack) - 1; i >= 0; i-- {
-		f := stack[i]
-		if v, ok := f.Variables[name]; ok {
-			return v, nil
-		}
-	}
+	// New scoping rules: unified namespace with shadowing detection
+	// Check if variable exists in both globals and local scope (current frame)
+	var inGlobals bool
+	var inLocal bool
+	var globalVal vm.Value
+	var localVal vm.Value
+
+	// Check globals
 	if globals != nil {
 		if v, ok := globals.Variables[name]; ok {
-			return v, nil
+			inGlobals = true
+			globalVal = v
 		}
 	}
+
+	// Check current frame (local scope)
+	if len(stack) > 0 {
+		currentFrame := stack[len(stack)-1]
+		if v, ok := currentFrame.Variables[name]; ok {
+			inLocal = true
+			localVal = v
+		}
+	}
+
+	// Shadowing detection: error if variable exists in both scopes
+	if inGlobals && inLocal {
+		return nil, fmt.Errorf("Variable shadowing detected: '%s' exists in both global and local scope", name)
+	}
+
+	// Return from globals first (if exists)
+	if inGlobals {
+		return globalVal, nil
+	}
+
+	// Return from local scope (if exists)
+	if inLocal {
+		return localVal, nil
+	}
+
+	// Check if it's a function name
 	if v, ok := program.Resolve(name); ok {
 		return vm.FnPtrValue(v), nil
 	}
+
 	return nil, fmt.Errorf("No such variable defined: %s", name)
 }
 

@@ -26,8 +26,8 @@ func (cc *compileContext) statement(s syntax.Stmt) error {
 		if err != nil {
 			return err
 		}
-		// Static analysis: collect all assigned variables for JavaScript-like scoping
-		sub.localVars = collectAssignedVars(v.Body)
+		// Note: localVars tracking removed with new unified namespace scoping
+		// Variables are no longer pre-analyzed; scoping is determined at runtime
 		err = sub.buildFromStatements(v.Body)
 		if err != nil {
 			return err
