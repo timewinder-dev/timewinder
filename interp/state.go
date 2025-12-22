@@ -93,8 +93,9 @@ func (s *State) HasEnabledStronglyFairThreads() (bool, []ThreadID) {
 			// Check if this thread is strongly fair
 			// A thread is strongly fair if:
 			// 1. Its ThreadSet is configured as strongly fair (StrongFair flag), OR
-			// 2. It has yielded with a strongly fair yield (GetStronglyFair returns true)
-			isStronglyFair := threadSet.StrongFair || s.GetStronglyFair(tid)
+			// 2. It has yielded with a strongly fair yield (GetStronglyFair returns true), OR
+			// 3. It is in Start state (threads must eventually start executing)
+			isStronglyFair := threadSet.StrongFair || s.GetStronglyFair(tid) || reason == Start
 			if !isStronglyFair {
 				continue
 			}

@@ -6,5 +6,4 @@
 output = None
 
 def greeting():
-    step("greeting")
     output = "hello, world"

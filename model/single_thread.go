@@ -272,8 +272,9 @@ func (s *SingleThreadEngine) handleStutterCheck(t *Thunk, st *interp.State) (*Mo
 	weaklyFair := st.GetWeaklyFair(t.ToRun)
 	stronglyFair := st.GetStronglyFair(t.ToRun)
 
-	// FIRST: Check if ANY strongly fair threads are enabled globally
+	// Check if ANY strongly fair threads are enabled globally
 	// If so, skip stutter check entirely (invalid termination point)
+	// This includes threads in Start state, which are implicitly strongly fair
 	hasStronglyFairEnabled, sfThreads := st.HasEnabledStronglyFairThreads()
 	if hasStronglyFairEnabled {
 		log.Debug().

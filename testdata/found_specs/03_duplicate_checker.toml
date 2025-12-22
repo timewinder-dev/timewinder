@@ -3,6 +3,7 @@ file = "03_duplicate_checker.star"
 
 [threads.checker]
 entrypoint = "check_duplicates()"
+fair = true
 
 [properties]
 # Should detect duplicates in the test sequence

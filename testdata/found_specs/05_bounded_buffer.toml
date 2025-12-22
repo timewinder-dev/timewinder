@@ -8,9 +8,6 @@ entrypoint = "producer()"
 entrypoint = "consumer()"
 
 [properties]
-# Buffer never exceeds size limit
-BufferBounded = {Always = "len(buf) <= 3"}
-# Eventually produce all items
-AllProduced = {Eventually = "produced == 10"}
-# Eventually consume all items
-AllConsumed = {Eventually = "consumed == 10"}
+BufferBounded = {Always = "len(buf) <= 3"}      # Buffer never exceeds size limit
+AllProduced = {Eventually = "produced == 10"}   # Eventually produce all items
+AllConsumed = {Eventually = "consumed == 10"}   # Eventually consume all items
