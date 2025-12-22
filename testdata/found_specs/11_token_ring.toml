@@ -1,0 +1,22 @@
+[spec]
+file = "11_token_ring.star"
+
+[threads.proc0]
+entrypoint = "process(0)"
+fair = true
+
+[threads.proc1]
+entrypoint = "process(1)"
+fair = true
+
+[threads.proc2]
+entrypoint = "process(2)"
+fair = true
+
+[properties]
+# Mutual exclusion: only one process in critical section
+MutualExclusion = {Always = "(in_cs[0] and 1 or 0) + (in_cs[1] and 1 or 0) + (in_cs[2] and 1 or 0) <= 1"}
+# Token is always held by someone
+TokenOwned = {Always = "token >= 0 and token <= 2"}
+# Each process eventually enters critical section
+Proc0EntersCS = {Eventually = "in_cs[0]"}

@@ -1,0 +1,8 @@
+[spec]
+file = "01_hello_world.star"
+
+[threads.main]
+entrypoint = "greeting()"
+
+[properties]
+OutputSet = {Eventually = "output != None"}

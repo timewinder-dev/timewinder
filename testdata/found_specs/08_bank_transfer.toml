@@ -1,0 +1,14 @@
+[spec]
+file = "08_bank_transfer.star"
+
+[threads.w1]
+entrypoint = "withdraw(30)"
+
+[threads.w2]
+entrypoint = "withdraw(40)"
+
+[properties]
+# Account should never go negative (overdraft protection)
+NoOverdraft = {Always = "account >= 0"}
+# Some withdrawal should succeed
+WithdrawalSucceeds = {Eventually = "account < 100"}

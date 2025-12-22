@@ -1,0 +1,15 @@
+[spec]
+file = "07_concurrent_counter.star"
+
+[threads.inc1]
+entrypoint = "incrementer()"
+
+[threads.inc2]
+entrypoint = "incrementer()"
+
+[properties]
+# Counter should never exceed the expected maximum
+CounterNotTooHigh = {Always = "counter <= 10"}
+# Counter should eventually increase
+CounterIncreases = {Eventually = "counter > 0"}
+# Note: Due to race conditions, counter may not reach 10 (lost updates)

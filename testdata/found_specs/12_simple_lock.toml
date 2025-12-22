@@ -1,0 +1,16 @@
+[spec]
+file = "12_simple_lock.star"
+
+[threads.proc0]
+entrypoint = "process(0)"
+
+[threads.proc1]
+entrypoint = "process(1)"
+
+[properties]
+# Mutual exclusion: never both processes in critical section
+MutualExclusion = {Always = "not (in_critical[0] and in_critical[1])"}
+# Eventually make progress
+Progress = {Eventually = "critical_count > 0"}
+# Eventually complete
+Complete = {Eventually = "critical_count == 6"}

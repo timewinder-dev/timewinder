@@ -1,0 +1,11 @@
+[spec]
+file = "03_duplicate_checker.star"
+
+[threads.checker]
+entrypoint = "check_duplicates()"
+
+[properties]
+# Should detect duplicates in the test sequence
+FindsDuplicate = {Eventually = "is_unique == False"}
+# All elements should be processed
+AllProcessed = {Eventually = "index == 4"}

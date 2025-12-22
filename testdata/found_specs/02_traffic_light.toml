@@ -1,0 +1,11 @@
+[spec]
+file = "02_traffic_light.star"
+
+[threads.light]
+entrypoint = "traffic_light()"
+
+[properties]
+# Only one light is on at a time
+MutualExclusion = {Always = "light['red'] + light['yellow'] + light['green'] == 1"}
+# We eventually see green
+EventuallyGreen = {Eventually = "light['green'] == 1"}

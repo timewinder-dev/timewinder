@@ -1,0 +1,17 @@
+[spec]
+file = "04_peterson_mutex.star"
+
+[threads.proc0]
+entrypoint = "process(0)"
+fair = true
+
+[threads.proc1]
+entrypoint = "process(1)"
+fair = true
+
+[properties]
+# Mutual exclusion: both processes never in critical section simultaneously
+MutualExclusion = {Always = "not (in_critical[0] and in_critical[1])"}
+# Both processes eventually enter critical section (liveness)
+Process0EntersCritical = {Eventually = "in_critical[0]"}
+Process1EntersCritical = {Eventually = "in_critical[1]"}
