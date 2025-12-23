@@ -1,0 +1,13 @@
+[spec]
+file = "test_primitives.star"
+
+[threads.thread0]
+entrypoint = "thread_with_step_until(0)"
+fair = true
+
+[threads.thread1]
+entrypoint = "thread_with_step_until(1)"
+fair = true
+
+# Note: No properties checked - this test just demonstrates the primitives work correctly
+# The test verifies that step_until() compiles and executes without errors

@@ -39,10 +39,9 @@ def process(pid):
                 continue  # Skip self
 
             # Keep checking while process j is choosing
-            # Use while loop because choosing status can change
+            # Use step_until() to loop while condition is true
             step("check_choosing")
-            while choosing[j]:
-                step("wait_choosing")
+            step_until("wait_choosing", choosing[j])
 
             # Keep checking while process j has priority over us
             # j has priority if:
@@ -50,8 +49,7 @@ def process(pid):
             #   - j's ticket is lower than ours OR
             #   - tickets are equal but j's pid is lower
             step("check_priority")
-            while number[j] != 0 and (number[j] < number[pid] or (number[j] == number[pid] and j < pid)):
-                step("wait_priority")
+            step_until("wait_priority", number[j] != 0 and (number[j] < number[pid] or (number[j] == number[pid] and j < pid)))
 
         # Enter critical section
         step("enter_critical")

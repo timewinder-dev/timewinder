@@ -14,8 +14,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// Disable trace logging in tests
-	log.Logger = zerolog.New(os.Stderr).Level(zerolog.Disabled)
+	// Set log level to info for tests (reduce verbosity)
+	log.Logger = zerolog.New(os.Stderr).Level(zerolog.InfoLevel)
 	os.Exit(m.Run())
 }
 

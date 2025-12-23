@@ -2,12 +2,21 @@ package vm
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	// Set log level to info for tests (reduce verbosity)
+	log.Logger = zerolog.New(os.Stderr).Level(zerolog.InfoLevel)
+	os.Exit(m.Run())
+}
 
 func TestSmall(t *testing.T) {
 	t.Skip("Compilation tests")

@@ -10,12 +10,20 @@ import (
 type Special string
 
 const (
-	Step    Special = "step"
-	FStep   Special = "fstep"
-	Until   Special = "until"
-	FUntil  Special = "funtil"
-	SFStep  Special = "sfstep"   // Strongly fair step
-	SFUntil Special = "sfuntil"  // Strongly fair wait
+	Step       Special = "step"
+	FStep      Special = "fstep"
+	Wait       Special = "wait"       // Renamed from "until"
+	FWait      Special = "fwait"      // Renamed from "funtil"
+	SFStep     Special = "sfstep"     // Strongly fair step
+	SFWait     Special = "sfwait"     // Renamed from "sfuntil"
+	StepUntil  Special = "step_until" // New: while loop + step
+	FStepUntil Special = "fstep_until" // New: while loop + fstep
+	SFStepUntil Special = "sfstep_until" // New: while loop + sfstep
+
+	// Deprecated aliases for backward compatibility
+	Until   Special = "until"   // Alias for wait
+	FUntil  Special = "funtil"  // Alias for fwait
+	SFUntil Special = "sfuntil" // Alias for sfwait
 )
 
 type FairnessType int
@@ -29,9 +37,16 @@ const (
 var allSpecials = []Special{
 	Step,
 	FStep,
+	Wait,
+	FWait,
+	SFStep,
+	SFWait,
+	StepUntil,
+	FStepUntil,
+	SFStepUntil,
+	// Deprecated aliases
 	Until,
 	FUntil,
-	SFStep,
 	SFUntil,
 }
 
@@ -93,26 +108,32 @@ func (cc *compileContext) specialCall(call *syntax.CallExpr) (bool, error) {
 		cc.emit(PUSH, StrValue(v.Value.(string)))
 		// Then yield with strong fairness (arg is for tracing/debugging)
 		cc.emit(STRONG_YIELD, StrValue(v.Value.(string)))
-	case Until:
-		return cc.compileUntil(call, NormalFairness)
-	case FUntil:
-		return cc.compileUntil(call, WeakFairness)
-	case SFUntil:
-		return cc.compileUntil(call, StrongFairness)
+	case Wait, Until: // wait() or until() (deprecated alias)
+		return cc.compileWait(call, NormalFairness)
+	case FWait, FUntil: // fwait() or funtil() (deprecated alias)
+		return cc.compileWait(call, WeakFairness)
+	case SFWait, SFUntil: // sfwait() or sfuntil() (deprecated alias)
+		return cc.compileWait(call, StrongFairness)
+	case StepUntil: // step_until(label, condition) - while condition: step(label)
+		return cc.compileStepUntil(call, NormalFairness)
+	case FStepUntil: // fstep_until(label, condition) - while condition: fstep(label)
+		return cc.compileStepUntil(call, WeakFairness)
+	case SFStepUntil: // sfstep_until(label, condition) - while condition: sfstep(label)
+		return cc.compileStepUntil(call, StrongFairness)
 	default:
 		return true, fmt.Errorf("Unhandled special: %s", fn.Name)
 	}
 	return true, nil
 }
 
-func (cc *compileContext) compileUntil(call *syntax.CallExpr, fairness FairnessType) (bool, error) {
+func (cc *compileContext) compileWait(call *syntax.CallExpr, fairness FairnessType) (bool, error) {
 	if len(call.Args) != 1 {
-		funcName := "until"
+		funcName := "wait"
 		switch fairness {
 		case WeakFairness:
-			funcName = "funtil"
+			funcName = "fwait"
 		case StrongFairness:
-			funcName = "sfuntil"
+			funcName = "sfwait"
 		}
 		return true, fmt.Errorf("%s takes exactly 1 argument (condition expression), got %d", funcName, len(call.Args))
 	}
@@ -139,6 +160,77 @@ func (cc *compileContext) compileUntil(call *syntax.CallExpr, fairness FairnessT
 	}
 
 	// Push None to leave a value on stack (for ExprStmt POP to consume)
+	cc.emit(PUSH, None)
+
+	return true, nil
+}
+
+func (cc *compileContext) compileStepUntil(call *syntax.CallExpr, fairness FairnessType) (bool, error) {
+	if len(call.Args) != 2 {
+		funcName := "step_until"
+		switch fairness {
+		case WeakFairness:
+			funcName = "fstep_until"
+		case StrongFairness:
+			funcName = "sfstep_until"
+		}
+		return true, fmt.Errorf("%s takes exactly 2 arguments (label, condition), got %d", funcName, len(call.Args))
+	}
+
+	// First argument must be a string literal (label)
+	labelLit, ok := call.Args[0].(*syntax.Literal)
+	if !ok || labelLit.Token != syntax.STRING {
+		return true, fmt.Errorf("first argument to step_until must be a string literal label")
+	}
+	label := StrValue(labelLit.Value.(string))
+
+	// Compile to: while condition: step(label)
+	// Structure:
+	//   loop_start:
+	//     <evaluate condition>
+	//     JFALSE loop_end
+	//     PUSH label
+	//     YIELD/FAIR_YIELD/STRONG_YIELD label
+	//     JMP loop_start
+	//   loop_end:
+	//     PUSH None
+
+	loopStart := cc.newLabel()
+	loopEnd := cc.newLabel()
+
+	// loop_start:
+	cc.emitLabel(loopStart)
+
+	// Evaluate condition
+	err := cc.expr(call.Args[1])
+	if err != nil {
+		return true, err
+	}
+
+	// JFALSE loop_end (if condition is false, exit loop)
+	cc.emit(JFALSE, StrValue(loopEnd))
+
+	// Push label and yield
+	cc.emit(PUSH, label)
+	switch fairness {
+	case NormalFairness:
+		cc.emit(YIELD, label)
+	case WeakFairness:
+		cc.emit(FAIR_YIELD, label)
+	case StrongFairness:
+		cc.emit(STRONG_YIELD, label)
+	}
+
+	// POP the label from stack (cleanup after yield)
+	cc.emit(POP)
+
+	// JMP loop_start (continue loop)
+	cc.emit(JMP, StrValue(loopStart))
+
+	// loop_end:
+	cc.emitLabel(loopEnd)
+
+	// Push None to leave value on stack (for ExprStmt POP to consume)
 	cc.emit(PUSH, None)
 
 	return true, nil

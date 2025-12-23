@@ -1,11 +1,20 @@
 package interp
 
 import (
+	"os"
 	"testing"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/require"
 	"github.com/timewinder-dev/timewinder/vm"
 )
+
+func TestMain(m *testing.M) {
+	// Set log level to info for tests (reduce verbosity)
+	log.Logger = zerolog.New(os.Stderr).Level(zerolog.InfoLevel)
+	os.Exit(m.Run())
+}
 
 type testCase struct {
 	name  string

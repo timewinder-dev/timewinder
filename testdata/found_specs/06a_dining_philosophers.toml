@@ -3,15 +3,15 @@ file = "06a_dining_philosophers.star"
 
 [threads.phil0]
 entrypoint = "philosopher(0, False)"
-fair = true
+strong_fair = true
 
 [threads.phil1]
 entrypoint = "philosopher(1, False)"
-fair = true
+strong_fair = true
 
 [threads.phil2]
 entrypoint = "philosopher(2, True)"  # Reversed fork order to break symmetry
-fair = true
+strong_fair = true
 
 [properties]
 # At most 2 philosophers can eat simultaneously (only 3 forks for 3 philosophers)

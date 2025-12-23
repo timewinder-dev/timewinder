@@ -31,7 +31,7 @@ def process(pid):
                 flag[pid] = False
 
                 step("wait_turn")
-                until(turn == pid)
+                wait(turn == pid)
 
                 # Re-raise flag after getting turn
                 flag[pid] = True
