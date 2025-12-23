@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ type SingleThreadEngine struct {
 	stateCount      int // Total number of states explored
 	depth           int // Current BFS depth
 	prunedThisDepth int // Number of states pruned at current depth
+	livelockCount   int // Number of livelocks detected
 }
 
 func InitSingleThread(exec *Executor) (*SingleThreadEngine, error) {
@@ -88,6 +90,7 @@ func (s *SingleThreadEngine) computeStatistics() ModelStatistics {
 		DuplicateStates:  s.stateCount - len(s.Executor.VisitedStates),
 		MaxDepth:         s.depth,
 		ViolationCount:   len(s.Executor.Violations),
+		LivelockCount:    s.livelockCount,
 	}
 }
 
@@ -193,7 +196,7 @@ func (s *SingleThreadEngine) handleCyclicState(t *Thunk, st *interp.State, state
 			}
 		}
 		log.Debug().Int("queue_len", queueLen).Msg("handleCyclicState: checking if threads can make progress")
-		successors, err := BuildRunnable(t, st, s.Executor)
+		successors, err := BuildRunnable(t, st, stateHash, s.Executor)
 		if err != nil {
 			return err
 		}
@@ -480,8 +483,11 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 				continue // Skip normal BuildRunnable handling
 			}
 
-			b, _ := json.Marshal(st)
-			fmt.Fprintf(w, "After execution:\n%s\n", string(b))
+			// Only marshal to JSON if we're actually going to output it
+			if w != io.Discard {
+				b, _ := json.Marshal(st)
+				fmt.Fprintf(w, "After execution:\n%s\n", string(b))
+			}
 			// Flatten pause reasons for display
 			var pauseReasons []interp.Pause
 			for _, threadSet := range st.ThreadSets {
@@ -516,10 +522,9 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 			if err != nil {
 				fmt.Fprintf(w, "Warning: livelock detection failed: %v\n", err)
 			}
-			if isLivelock && s.Executor.Reporter != nil {
-				s.Executor.Reporter.Printf("%s Livelock detected - cycling through equivalent states\n",
-					color.Yellow.Sprint("⚠"))
-			}
+			if isLivelock {
+			s.livelockCount++
+		}
 
 			// Check invariant properties (Always) - not EventuallyAlways
 			alwaysProps := FilterPropertiesByOperator(s.Executor.TemporalConstraints, Always)
@@ -541,7 +546,7 @@ func (s *SingleThreadEngine) RunModel() (*ModelResult, error) {
 			}
 
 			// Generate successors (BuildRunnable no longer checks cycles)
-			next, err := BuildRunnable(t, st, s.Executor)
+			next, err := BuildRunnable(t, st, stateHash, s.Executor)
 			if err != nil {
 				return nil, err
 			}

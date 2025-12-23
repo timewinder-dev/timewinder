@@ -305,5 +305,13 @@ func FormatStatistics(stats ModelStatistics) string {
 	} else {
 		b.WriteString(color.Green.Sprintf("%d\n", stats.ViolationCount))
 	}
+
+	// Show livelock count
+	b.WriteString(color.Bold.Sprint("Livelocks detected: "))
+	if stats.LivelockCount > 0 {
+		b.WriteString(color.Yellow.Sprintf("%d\n", stats.LivelockCount))
+	} else {
+		b.WriteString(fmt.Sprintf("%d\n", stats.LivelockCount))
+	}
 	return b.String()
 }

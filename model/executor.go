@@ -33,6 +33,7 @@ type ModelStatistics struct {
 	DuplicateStates  int
 	MaxDepth         int
 	ViolationCount   int
+	LivelockCount    int
 }
 
 // ModelResult holds the result of a model checking run

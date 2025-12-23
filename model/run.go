@@ -20,14 +20,9 @@ func RunTrace(t *Thunk, prog *vm.Program) (*interp.State, []vm.Value, error) {
 
 // BuildRunnable generates successor states for a given thunk
 // Note: Cycle detection is now handled in RunModel(), not here
-func BuildRunnable(t *Thunk, state *interp.State, exec *Executor) ([]*Thunk, error) {
+// stateHash should be pre-computed by the caller to avoid redundant decomposition
+func BuildRunnable(t *Thunk, state *interp.State, stateHash cas.Hash, exec *Executor) ([]*Thunk, error) {
 	log.Trace().Interface("from_thread", t.ToRun).Msg("BuildRunnable: generating successors")
-
-	// Hash the state (CAS handles decomposition internally)
-	stateHash, err := exec.CAS.Put(state)
-	if err != nil {
-		return nil, fmt.Errorf("hashing state: %w", err)
-	}
 
 	// Canonicalize the state to handle non-determinism
 	states, err := interp.Canonicalize(state)
