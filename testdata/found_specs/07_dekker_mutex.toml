@@ -1,0 +1,17 @@
+[spec]
+file = "07_dekker_mutex.star"
+
+[threads.process0]
+entrypoint = "process(0)"
+fair = true
+
+[threads.process1]
+entrypoint = "process(1)"
+fair = true
+
+[properties]
+# Mutual exclusion: never both in critical section
+MutualExclusion = {Always = "not (in_critical[0] and in_critical[1])"}
+# Each process eventually enters critical section
+Process0EntersCritical = {AlwaysEventually = "in_critical[0]"}
+Process1EntersCritical = {AlwaysEventually = "in_critical[1]"}

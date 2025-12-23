@@ -1,0 +1,22 @@
+[spec]
+file = "08_bakery_mutex.star"
+
+[threads.process0]
+entrypoint = "process(0)"
+fair = true
+
+[threads.process1]
+entrypoint = "process(1)"
+fair = true
+
+[threads.process2]
+entrypoint = "process(2)"
+fair = true
+
+[properties]
+# Mutual exclusion: at most one process in critical section
+MutualExclusion = {Always = "(in_critical[0] and 1 or 0) + (in_critical[1] and 1 or 0) + (in_critical[2] and 1 or 0) <= 1"}
+# Each process eventually enters critical section (starvation freedom)
+Process0EntersCritical = {AlwaysEventually = "in_critical[0]"}
+Process1EntersCritical = {AlwaysEventually = "in_critical[1]"}
+Process2EntersCritical = {AlwaysEventually = "in_critical[2]"}

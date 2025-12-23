@@ -1,0 +1,19 @@
+[spec]
+file = "09_concurrent_counter.star"
+expected_error = "FinalCounterValue"
+
+[threads.thread0]
+entrypoint = "incrementer(0)"
+fair = true
+
+[threads.thread1]
+entrypoint = "incrementer(1)"
+fair = true
+
+[properties]
+# This property SHOULD FAIL - demonstrating the race condition
+# Each thread increments twice, so final value should be 4
+# But due to race condition, we might get 2 or 3
+FinalCounterValue = {Eventually = "counter['value'] == 4"}
+# Counter never decreases
+CounterMonotonic = {Always = "counter['value'] >= 0"}
