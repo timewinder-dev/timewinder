@@ -27,7 +27,7 @@ def process(pid):
         step("enter_critical")
         in_critical[pid] = True
 
-        step("exit_critical")
+        sfstep("exit_critical")
         in_critical[pid] = False
 
         # Exit protocol

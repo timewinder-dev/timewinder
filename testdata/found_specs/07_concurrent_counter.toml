@@ -1,11 +1,11 @@
 [spec]
 file = "07_concurrent_counter.star"
 
-[threads.inc1]
+[threads.inc]
 entrypoint = "incrementer()"
+fair = true
+replicas = 2
 
-[threads.inc2]
-entrypoint = "incrementer()"
 
 [properties]
 # Counter should never exceed the expected maximum

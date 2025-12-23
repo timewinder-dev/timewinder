@@ -1,6 +1,5 @@
 [spec]
-file = "06_dining_philosophers.star"
-expected_error = "Deadlock"
+file = "06b_dining_philosophers.star"
 
 [threads.phil0]
 entrypoint = "philosopher(0)"

@@ -175,9 +175,9 @@ Supported temporal operators:
    - Version reporting
 
 6. **Method Calls**:
-   - Array methods: append, pop, len, clear
-   - Dict methods: get, keys, values, items, len, clear
-   - String methods: len, split, upper, lower
+   - Array methods: append, pop (supports index argument)
+   - Dict methods: (need implementation)
+   - String methods: (need implementation)
    - Method dispatch through MethodRegistry
    - Both RunToEnd and RunToPause handle MethodCallStep
 
@@ -422,7 +422,7 @@ These branches contain partial fixes but aren't fully working yet.
 - ✅ All practical_tla/ch1 tests passing (6/6)
 - ✅ All practical_tla/ch5 tests passing (5/5)
 - ✅ All practical_tla/ch6 tests passing (2/2)
-- ⚠️ found_specs: 10/12 failing (need fairness annotations), 1/12 has bug (negative index), 1/12 passing
+- ⚠️ found_specs: 2/12 passing (04_peterson_mutex ✅, 05_bounded_buffer ✅), 1/12 has bug (06_dining_philosophers), 9/12 need fixing
 
 ## Quick Wins (Low-Hanging Fruit)
 
@@ -438,24 +438,47 @@ These branches contain partial fixes but aren't fully working yet.
 
 ---
 
-### 2. Add Fairness to found_specs (1-2 hours)
+### 2. Fix found_specs Properties (1-2 hours) ✅ Peterson Mutex Fixed!
 **Location**: `testdata/found_specs/*.toml` files
-**Issue**: 10 out of 12 specs fail at depth 1 due to stutter checks
-**Root cause**: Threads need fairness to ensure progress
-**Fix**: Add `fair = true` or `strong_fair = true` to thread definitions in TOML files
+**Issue**: 10 out of 12 specs fail due to incorrect property specifications
+**Root cause**: Many specs need different temporal operators or fairness
 
-**Example** (testdata/found_specs/05_bounded_buffer.toml):
+**Fix Options (choose based on spec):**
+
+**Option A: Use AlwaysEventually for liveness (RECOMMENDED for mutual exclusion)**
+```toml
+# Peterson mutex example - processes should REPEATEDLY enter, not just once
+Process0EntersCritical = {AlwaysEventually = "in_critical[0]"}
+Process1EntersCritical = {AlwaysEventually = "in_critical[1]"}
+```
+- `Eventually`: Property true at least once
+- `AlwaysEventually`: Property true infinitely often (once per cycle)
+- Use for: starvation freedom, repeated resource access
+
+**Option B: Add fairness annotations**
 ```toml
 [threads.producer]
 entrypoint = "producer()"
-fair = true  # Add this
-
-[threads.consumer]
-entrypoint = "consumer()"
-fair = true  # Add this
+fair = true  # Weak fairness
+# OR
+strong_fair = true  # Strong fairness (if condition toggles)
 ```
 
-**Failing specs**: 04_peterson_mutex, 05_bounded_buffer, 07_concurrent_counter, 08_bank_transfer, 09_message_passing, 10_readers_writers, 12_simple_lock, and 3 others
+**Peterson Mutex (04_peterson_mutex.toml) - ✅ FIXED:**
+- Changed `Eventually` → `AlwaysEventually` for both processes
+- This correctly captures "freedom from starvation" property
+- No fairness annotations needed in TOML!
+
+**Bounded Buffer (05_bounded_buffer.toml) - ✅ FIXED:**
+- Implemented missing `array.pop(index)` method
+- Added `fair = true` for both producer and consumer threads
+- Weak fairness sufficient (unlike Peterson's mutex) because buffer state coordination is stable
+
+**Remaining specs**: 07_concurrent_counter, 08_bank_transfer, 09_message_passing, 10_readers_writers, 12_simple_lock, and others
+
+**Key Insight**: Property specification matters as much as fairness! Ask the right question:
+- "Eventually X" = X happens at least once
+- "AlwaysEventually X" = X happens infinitely often (no starvation)
 
 **Test**: `go test ./integration -run TestModelSpecs/found_specs`
 

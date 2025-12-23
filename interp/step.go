@@ -843,8 +843,12 @@ func getAttribute(obj, key vm.Value) (vm.Value, error) {
 		// Array/list access
 		if idx, ok := key.(vm.IntValue); ok {
 			i := int(idx)
+			// Handle negative indices Python-style: arr[-1] = arr[len-1]
+			if i < 0 {
+				i = len(o) + i
+			}
 			if i < 0 || i >= len(o) {
-				return nil, fmt.Errorf("Index %d out of bounds for array of length %d", i, len(o))
+				return nil, fmt.Errorf("Index %d out of bounds for array of length %d", int(idx), len(o))
 			}
 			return o[i], nil
 		}
@@ -865,8 +869,12 @@ func setAttribute(obj, key, val vm.Value) error {
 		// Array/list assignment
 		if idx, ok := key.(vm.IntValue); ok {
 			i := int(idx)
+			// Handle negative indices Python-style: arr[-1] = arr[len-1]
+			if i < 0 {
+				i = len(o) + i
+			}
 			if i < 0 || i >= len(o) {
-				return fmt.Errorf("Index %d out of bounds for array of length %d", i, len(o))
+				return fmt.Errorf("Index %d out of bounds for array of length %d", int(idx), len(o))
 			}
 			o[i] = val
 			return nil

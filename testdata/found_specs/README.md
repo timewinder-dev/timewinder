@@ -48,36 +48,6 @@ This directory contains TLA+/PlusCal specifications found from blogs, tutorials,
 **Description**: Demonstrates race conditions with concurrent increments
 **Pattern**: Lost update problem, race condition, read-modify-write
 
-### 8. Bank Transfer
-**Files**: `08_bank_transfer.*`
-**Source**: [Hillel Wayne - TLA+ Examples](https://www.hillelwayne.com/post/list-of-tla-examples/), [Learn TLA+](https://learntla.com)
-**Description**: Concurrent withdrawals with overdraft protection
-**Pattern**: Check-then-act race condition, financial transactions
-
-### 9. Message Passing
-**Files**: `09_message_passing.*`
-**Source**: Common distributed systems pattern
-**Description**: Asynchronous communication between sender and receiver
-**Pattern**: Message queue, asynchronous communication, FIFO
-
-### 10. Readers-Writers
-**Files**: `10_readers_writers.*`
-**Source**: Classic OS/concurrency textbook problem
-**Description**: Multiple readers or single writer can access shared data
-**Pattern**: Multiple readers single writer, synchronization primitives
-
-### 11. Token Ring
-**Files**: `11_token_ring.*`
-**Source**: Classic distributed algorithm pattern
-**Description**: Token passing protocol for mutual exclusion
-**Pattern**: Distributed mutual exclusion, token passing, ring topology
-
-### 12. Simple Lock
-**Files**: `12_simple_lock.*`
-**Source**: Fundamental concurrency pattern
-**Description**: Basic mutex using a boolean lock variable
-**Pattern**: Lock/unlock, mutual exclusion, critical section
-
 ## File Structure
 
 For each example, you'll find three files:

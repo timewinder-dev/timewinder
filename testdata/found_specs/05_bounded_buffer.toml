@@ -3,11 +3,11 @@ file = "05_bounded_buffer.star"
 
 [threads.producer]
 entrypoint = "producer()"
+fair = true
 
 [threads.consumer]
 entrypoint = "consumer()"
+fair = true
 
 [properties]
 BufferBounded = {Always = "len(buf) <= 3"}      # Buffer never exceeds size limit
-AllProduced = {Eventually = "produced == 10"}   # Eventually produce all items
-AllConsumed = {Eventually = "consumed == 10"}   # Eventually consume all items

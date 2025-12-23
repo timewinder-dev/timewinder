@@ -1,17 +1,16 @@
 [spec]
-file = "06_dining_philosophers.star"
-expected_error = "Deadlock"
+file = "06a_dining_philosophers.star"
 
 [threads.phil0]
-entrypoint = "philosopher(0)"
+entrypoint = "philosopher(0, False)"
 fair = true
 
 [threads.phil1]
-entrypoint = "philosopher(1)"
+entrypoint = "philosopher(1, False)"
 fair = true
 
 [threads.phil2]
-entrypoint = "philosopher(2)"
+entrypoint = "philosopher(2, True)"  # Reversed fork order to break symmetry
 fair = true
 
 [properties]

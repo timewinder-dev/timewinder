@@ -1,18 +1,17 @@
 [spec]
-file = "06_dining_philosophers.star"
-expected_error = "Deadlock"
+file = "06c_dining_philosophers.star"
 
 [threads.phil0]
 entrypoint = "philosopher(0)"
-fair = true
+strong_fair = true  # Strong fairness ensures liveness
 
 [threads.phil1]
 entrypoint = "philosopher(1)"
-fair = true
+strong_fair = true  # Strong fairness ensures liveness
 
 [threads.phil2]
 entrypoint = "philosopher(2)"
-fair = true
+strong_fair = true  # Strong fairness ensures liveness
 
 [properties]
 # At most 2 philosophers can eat simultaneously (only 3 forks for 3 philosophers)

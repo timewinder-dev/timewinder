@@ -194,6 +194,8 @@ func (cc *compileContext) intoFunction() (*Function, error) {
 		case CONDITIONAL_YIELD:
 			fallthrough
 		case CONDITIONAL_FAIR_YIELD:
+			fallthrough
+		case CONDITIONAL_STRONG_YIELD:
 			if v, ok := b.Arg.(StrValue); ok {
 				b.Arg = IntValue(offsetmap[string(v)])
 			}
