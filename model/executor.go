@@ -55,15 +55,16 @@ type Executor struct {
 	DebugWriter        io.Writer
 	Reporter           Reporter            // Progress reporter
 	CAS                cas.CAS
-	VisitedStates      map[cas.Hash]bool
-	WeakStateHistory   map[cas.Hash][]int           // Track depths where weak states were seen
-	WeakStateSamples   map[cas.Hash]*interp.State   // Sample state for each weak hash
+	VisitedStates      map[cas.Hash]bool            // TODO: Can be replaced with CAS.Has(hash)
 	KeepGoing          bool
 	ShowDetails        bool                // Show detailed trace reconstruction
 	Violations         []PropertyViolation // Track all violations found
 	NoDeadlocks        bool                // Disable deadlock detection
 	Termination        bool                // Require all threads to terminate (default: false, infinite loops allowed)
 	MaxDepth           int                 // Maximum depth to explore (0 = unlimited)
+	UseMultiThread     bool                // Use multi-threaded model checker
+	NumExecThreads     int                 // Number of execution worker threads (0 = default)
+	NumCheckThreads    int                 // Number of checking worker threads (0 = default)
 }
 
 type Engine interface {
@@ -78,8 +79,6 @@ func (e *Executor) Initialize() error {
 
 	// Initialize CAS and visited states tracking
 	e.VisitedStates = make(map[cas.Hash]bool)
-	e.WeakStateHistory = make(map[cas.Hash][]int)
-	e.WeakStateSamples = make(map[cas.Hash]*interp.State)
 
 	err = e.initializeProperties()
 	if err != nil {
@@ -200,7 +199,11 @@ func (e *Executor) spawnThread(name string, entrypoint string, replicas int, fai
 
 func (e *Executor) initEngine() error {
 	var err error
-	e.Engine, err = InitSingleThread(e)
+	if e.UseMultiThread {
+		e.Engine, err = NewMultiThread(e, e.NumExecThreads, e.NumCheckThreads)
+	} else {
+		e.Engine, err = InitSingleThread(e)
+	}
 	if err != nil {
 		return err
 	}

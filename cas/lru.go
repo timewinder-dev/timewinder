@@ -124,3 +124,13 @@ func (l *LRUCache) Stats() CacheStats {
 		MaxSize: l.maxSize,
 	}
 }
+
+// RecordWeakStateDepth delegates to underlying CAS
+func (l *LRUCache) RecordWeakStateDepth(weakHash Hash, depth int) {
+	l.underlying.RecordWeakStateDepth(weakHash, depth)
+}
+
+// GetWeakStateDepths delegates to underlying CAS
+func (l *LRUCache) GetWeakStateDepths(weakHash Hash) []int {
+	return l.underlying.GetWeakStateDepths(weakHash)
+}

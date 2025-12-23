@@ -25,6 +25,9 @@ var (
 	cpuProfile      string
 	memProfile      string
 	lruSize         int
+	parallelFlag    bool
+	execThreads     int
+	checkThreads    int
 )
 
 var runCmd = &cobra.Command{
@@ -44,6 +47,9 @@ func init() {
 	runCmd.Flags().StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile to specified file")
 	runCmd.Flags().StringVar(&memProfile, "memprofile", "", "Write memory profile to specified file")
 	runCmd.Flags().IntVar(&lruSize, "lru-size", 10000, "LRU cache size for CAS (0 = disabled)")
+	runCmd.Flags().BoolVar(&parallelFlag, "parallel", false, "Use multi-threaded model checker for better performance")
+	runCmd.Flags().IntVar(&execThreads, "exec-threads", 0, "Number of execution worker threads (0 = NumCPU, only with --parallel)")
+	runCmd.Flags().IntVar(&checkThreads, "check-threads", 0, "Number of checking worker threads (0 = NumCPU/2, only with --parallel)")
 }
 
 func runCommand(cmd *cobra.Command, args []string) {
@@ -133,6 +139,12 @@ func runCommand(cmd *cobra.Command, args []string) {
 	}
 	if maxDepth > 0 {
 		exec.MaxDepth = maxDepth
+	}
+	// Set parallel execution flags
+	if parallelFlag {
+		exec.UseMultiThread = true
+		exec.NumExecThreads = execThreads
+		exec.NumCheckThreads = checkThreads
 	}
 
 	fmt.Fprintln(os.Stderr, color.Cyan.Sprint("Running model checker..."))

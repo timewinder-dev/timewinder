@@ -60,20 +60,24 @@ func DetectLivelock(exec *Executor, st *interp.State, currentDepth int) (bool, e
 		return false, err
 	}
 
-	depths, seen := exec.WeakStateHistory[weakHash]
-	if !seen {
-		// First time seeing this weak state - store a sample
-		exec.WeakStateHistory[weakHash] = []int{currentDepth}
-		exec.WeakStateSamples[weakHash] = st.Clone()
+	// Get current depth history from CAS
+	depths := exec.CAS.GetWeakStateDepths(weakHash)
+
+	if len(depths) == 0 {
+		// First time seeing this weak state - record depth
+		// Note: The state is already in CAS (stored by caller), so we don't need to Put it again
+		exec.CAS.RecordWeakStateDepth(weakHash, currentDepth)
 		return false, nil
 	}
 
-	// We've seen this weak state before - add current depth
-	exec.WeakStateHistory[weakHash] = append(depths, currentDepth)
+	// We've seen this weak state before - record this depth
+	exec.CAS.RecordWeakStateDepth(weakHash, currentDepth)
+
+	// Re-fetch to get updated depths (including the one we just added)
+	allDepths := exec.CAS.GetWeakStateDepths(weakHash)
 
 	// Check if we're in a repeating pattern (seen at least 3 times)
-	if len(exec.WeakStateHistory[weakHash]) >= 3 {
-		allDepths := exec.WeakStateHistory[weakHash]
+	if len(allDepths) >= 3 {
 		// Check if there's a consistent cycle length
 		lastThree := allDepths[len(allDepths)-3:]
 		cycle1 := lastThree[1] - lastThree[0]
@@ -85,11 +89,11 @@ func DetectLivelock(exec *Executor, st *interp.State, currentDepth int) (bool, e
 			fmt.Fprintf(exec.DebugWriter, "  Seen at depths: %v\n", allDepths)
 			fmt.Fprintf(exec.DebugWriter, "  Cycle length: %d\n", cycle1)
 
-			// Show differences between first and current state
-			if sample, ok := exec.WeakStateSamples[weakHash]; ok {
-				fmt.Fprintf(exec.DebugWriter, "\n  Differences between states:\n")
-				ShowStateDifferences(exec.DebugWriter, sample, st, exec.Threads)
-			}
+			// Try to retrieve the sample state for comparison
+			// Note: We use the weak hash as the key, but the actual state hash may differ
+			// This is a limitation - we might not find the exact sample
+			// For now, just note that we detected a livelock
+			// TODO: Store weak hash -> state hash mapping to retrieve samples reliably
 
 			return true, nil
 		}

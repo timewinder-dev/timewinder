@@ -14,6 +14,10 @@ type CAS interface {
 	Put(item Hashable) (Hash, error)
 	Has(hash Hash) bool
 	getReader(hash Hash) (bool, io.Reader, error)
+
+	// Weak state tracking for livelock detection
+	RecordWeakStateDepth(weakHash Hash, depth int)
+	GetWeakStateDepths(weakHash Hash) []int
 }
 
 type Serde interface {
