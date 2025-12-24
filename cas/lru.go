@@ -3,10 +3,12 @@ package cas
 import (
 	"container/list"
 	"io"
+	"sync"
 )
 
 // LRUCache is a CAS wrapper that caches deserialized objects using LRU eviction
 type LRUCache struct {
+	mu         sync.RWMutex
 	underlying CAS
 	cache      map[Hash]*list.Element
 	evictList  *list.List
@@ -49,13 +51,16 @@ func (l *LRUCache) getReader(hash Hash) (bool, io.Reader, error) {
 
 // getValue implements directStore interface - this is where caching happens
 func (l *LRUCache) getValue(h Hash) (bool, []byte, error) {
-	// Check cache first
+	// Check cache first (with read lock)
+	l.mu.RLock()
 	if elem, ok := l.cache[h]; ok {
 		// Move to front (most recently used)
 		l.evictList.MoveToFront(elem)
 		entry := elem.Value.(*cacheEntry)
+		l.mu.RUnlock()
 		return true, entry.value, nil
 	}
+	l.mu.RUnlock()
 
 	// Not in cache - fetch from underlying store
 	underlying, ok := l.underlying.(directStore)
@@ -80,6 +85,9 @@ func (l *LRUCache) getValue(h Hash) (bool, []byte, error) {
 
 // addToCache adds an entry to the cache and evicts oldest if necessary
 func (l *LRUCache) addToCache(hash Hash, value []byte) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	// If already in cache, update and move to front
 	if elem, ok := l.cache[hash]; ok {
 		l.evictList.MoveToFront(elem)

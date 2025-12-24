@@ -2,6 +2,9 @@ package model
 
 import (
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,31 +14,34 @@ import (
 
 // TestMultiThreadEquivalence verifies that MultiThreadEngine produces the same results as SingleThreadEngine
 func TestMultiThreadEquivalence(t *testing.T) {
-	testCases := []struct {
-		name     string
-		specPath string
-	}{
-		{"PracticalTLA Ch1 A", "../testdata/practical_tla/ch1/ch1_a.toml"},
-		{"PracticalTLA Ch1 B", "../testdata/practical_tla/ch1/ch1_b.toml"},
-		{"PracticalTLA Ch1 C", "../testdata/practical_tla/ch1/ch1_c.toml"},
-		{"PracticalTLA Ch1 D", "../testdata/practical_tla/ch1/ch1_d.toml"},
-		{"PracticalTLA Ch1 E", "../testdata/practical_tla/ch1/ch1_e.toml"},
-		{"PracticalTLA Ch5 A", "../testdata/practical_tla/ch5/ch5_a.toml"},
-		{"PracticalTLA Ch5 B", "../testdata/practical_tla/ch5/ch5_b.toml"},
-		{"PracticalTLA Ch5 C", "../testdata/practical_tla/ch5/ch5_c.toml"},
-		{"Peterson Mutex", "../testdata/found_specs/04_peterson_mutex.toml"},
-		{"Bounded Buffer", "../testdata/found_specs/05_bounded_buffer.toml"},
-	}
+	// Discover all .toml files in testdata
+	var tomlFiles []string
+	err := filepath.Walk("../testdata", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".toml") {
+			tomlFiles = append(tomlFiles, path)
+		}
+		return nil
+	})
+	require.NoError(t, err, "Failed to walk testdata directory")
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+	// Run test for each discovered .toml file
+	for _, specPath := range tomlFiles {
+		// Create a friendly test name from the path
+		testName := strings.TrimPrefix(specPath, "../testdata/")
+		testName = strings.TrimSuffix(testName, ".toml")
+		testName = strings.ReplaceAll(testName, "/", "_")
+
+		t.Run(testName, func(t *testing.T) {
 			// Run with SingleThreadEngine
-			singleResult, err := runWithEngine(t, tc.specPath, false, 0, 0)
+			singleResult, err := runWithEngine(t, specPath, false, 0, 0)
 			require.NoError(t, err, "SingleThread should not return error")
 			require.NotNil(t, singleResult, "SingleThread should return result")
 
 			// Run with MultiThreadEngine (4 exec, 2 check threads)
-			multiResult, err := runWithEngine(t, tc.specPath, true, 4, 2)
+			multiResult, err := runWithEngine(t, specPath, true, 4, 2)
 			require.NoError(t, err, "MultiThread should not return error")
 			require.NotNil(t, multiResult, "MultiThread should return result")
 
